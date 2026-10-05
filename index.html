@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>oraXpress — Global Marketplace & SaaS Platform</title>
+<meta name="description" content="oraXpress — Global marketplace & SaaS platform for accounting, e-commerce, restaurant, school, inventory." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛒</text></svg>" />
+<script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+  html { scroll-behavior: smooth; }
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .fade-in { animation: fadeIn 0.35s ease-out; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+</style>
+</head>
+<body class="bg-gray-50 text-gray-900 font-sans antialiased">
+
+<div id="app"></div>
+
+<!-- Firebase (modular CDN) -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import {
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword,
+  createUserWithEmailAndPassword, signOut
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import {
+  getFirestore, collection, doc, getDoc, getDocs
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+/* =========================================================================
+   ⚙️ STEP 1: Firebase Console থেকে নিচের মানগুলো বসান
+   না বসালে সাইট Demo Mode-এ চলবে (কিন্তু তারপরেও সুন্দর দেখাবে)
+   ========================================================================= */
+const firebaseConfig = {
+  apiKey:            "YOUR_API_KEY",
+  authDomain:        "YOUR_PROJECT.firebaseapp.com",
+  projectId:         "YOUR_PROJECT_ID",
+  storageBucket:     "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId:             "YOUR_APP_ID"
+};
+
+/* =======================  STATE  ======================= */
+const state = {
+  user: null,
+  profile: null,
+  route: location.hash.replace("#", "") || "/",
+  categories: [],
+  platforms: [],
+  products: [],
+  demoMode: !firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY"
+};
+
+let app = null, auth = null, db = null;
+if (!state.demoMode) {
+  try {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+  } catch (e) {
+    console.warn("Firebase init failed:", e);
+    state.demoMode = true;
+  }
+}
+
+/* =======================  DEMO DATA  ======================= */
+const DEMO_CATEGORIES = [
+  { id: "electronics", name: "Consumer Electronics", icon: "📺" },
+  { id: "phones",      name: "Phones & Accessories",  icon: "📱" },
+  { id: "computers",   name: "Computers & Office",    icon: "💻" },
+  { id: "home",        name: "Home & Appliances",     icon: "🏠" },
+  { id: "fashion",     name: "Fashion & Apparel",     icon: "👕" },
+  { id: "beauty",      name: "Beauty & Health",       icon: "💄" },
+  { id: "sports",      name: "Sports & Outdoors",     icon: "🏕️" },
+  { id: "toys",        name: "Toys & Hobbies",        icon: "🎮" }
+];
+
+const DEMO_PLATFORMS = [
+  { id: "hisabai",    slug: "hisabai",    name: "Hisab AI",              category: "Accounting", desc: "Automated Cloud Invoicing & Financial Ledger",     icon: "🧮", color: "from-blue-600 to-indigo-600",    status: "LIVE" },
+  { id: "ecommerce",  slug: "e-commerce", name: "oraXpress Marketplace", category: "E-commerce", desc: "Global buyer-seller marketplace with protection",  icon: "🛒", color: "from-orange-500 to-red-500",      status: "LIVE" },
+  { id: "restaurant", slug: "restaurant", name: "oraRestaurant POS",     category: "Restaurant", desc: "Modern Cloud POS & Kitchen Display System",        icon: "🍽️", color: "from-red-500 to-pink-600",       status: "LIVE" },
+  { id: "school",     slug: "school",     name: "oraSchool ERP",         category: "Education",  desc: "All-in-One Academy & Student ERP",                 icon: "🎓", color: "from-emerald-500 to-teal-600",   status: "LIVE" },
+  { id: "inventory",  slug: "inventory",  name: "oraInventory",          category: "Business",   desc: "Multi-Warehouse Stock & Order Management",         icon: "📦", color: "from-purple-600 to-violet-600",  status: "LIVE" }
+];
+
+const DEMO_PRODUCTS = [
+  { id: 1, name: "Anker Soundcore Space One ANC Wireless Headphones", price: 49.99, old: 99.99, img: "🎧", claimed: 88, tag: "Fast Selling" },
+  { id: 2, name: "UGREEN 100W GaN Fast Charger 4-Port USB-C",         price: 34.50, old: 69.99, img: "🔌", claimed: 94, tag: "Fast Selling" },
+  { id: 3, name: "Xiaomi Smart Band 9 AMOLED 21-Day Battery",         price: 28.90, old: 40.00, img: "⌚", claimed: 76, tag: "Fast Selling" },
+  { id: 4, name: "Wireless Mechanical Keyboard 75% Hot-Swappable RGB",price: 42.80, old: 95.00, img: "⌨️", claimed: 82, tag: "Fast Selling" },
+  { id: 5, name: "Pagani Design Luxury Automatic Watch NH35 Sapphire",price: 78.50, old: 169.00,img: "⌚", claimed: 91, tag: "Choice" },
+  { id: 6, name: "Men Waterproof Tactical Cargo Pants Multi-Pocket",  price: 18.20, old: 39.00, img: "👖", claimed: 73, tag: "Choice" },
+  { id: 7, name: "4K Professional GPS Drone with 3-Axis Gimbal EIS",  price: 145.00,old: 299.00,img: "🚁", claimed: 66, tag: "Top Brand" },
+  { id: 8, name: "High-Speed Hair Dryer 110,000 RPM Brushless Motor", price: 39.99, old: 99.99, img: "💨", claimed: 89, tag: "Plus" }
+];
+
+/* =======================  HEADER  ======================= */
+function header() {
+  const right = state.user
+    ? `<div class="flex items-center gap-2">
+         <button data-action="go-admin" class="hidden md:inline-block text-sm font-semibold text-gray-700 hover:text-orange-600">Admin</button>
+         <button data-action="logout" class="text-sm font-semibold bg-gray-900 text-white px-4 py-2 rounded-full hover:bg-gray-800">Logout</button>
+       </div>`
+    : `<button data-action="open-auth" class="text-sm font-semibold bg-orange-500 text-white px-4 py-2 rounded-full hover:bg-orange-600">Sign In</button>`;
+
+  return `
+  <header class="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-gray-200">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center gap-4">
+      <a href="#/" class="flex items-center gap-2 shrink-0">
+        <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-orange-500 to-red-500 grid place-items-center text-white font-bold">oX</div>
+        <span class="text-xl font-bold">ora<span class="text-orange-500">Xpress</span></span>
+      </a>
+      <div class="flex-1 hidden md:flex">
+        <input placeholder="Search deals, products & brands..." class="w-full border border-gray-300 rounded-full px-5 py-2.5 text-sm focus:outline-none focus:border-orange-500" />
+      </div>
+      <nav class="hidden lg:flex items-center gap-6 text-sm font-medium text-gray-700">
+        <a href="#/" class="hover:text-orange-600">Home</a>
+        <a href="#/e-commerce" class="hover:text-orange-600">Marketplace</a>
+        <a href="#/hisabai" class="hover:text-orange-600">SaaS</a>
+      </nav>
+      ${right}
+    </div>
+  </header>`;
+}
+
+/* =======================  FOOTER  ======================= */
+function footer() {
+  return `
+  <footer class="bg-gray-100 border-t border-gray-200 mt-16">
+    <div class="max-w-7xl mx-auto px-4 py-12 grid md:grid-cols-4 gap-8 text-sm">
+      <div>
+        <h4 class="font-bold mb-3">Customer Care</h4>
+        <ul class="space-y-2 text-gray-600">
+          <li><a href="#" class="hover:text-orange-600">Help Center</a></li>
+          <li><a href="#" class="hover:text-orange-600">Buyer Protection</a></li>
+          <li><a href="#" class="hover:text-orange-600">Track Order</a></li>
+          <li><a href="#" class="hover:text-orange-600">Returns & Refunds</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4 class="font-bold mb-3">Business Suites</h4>
+        <ul class="space-y-2 text-gray-600">
+          ${state.platforms.slice(0,4).map(p => `<li><a href="#/${p.slug}" class="hover:text-orange-600">${p.name}</a></li>`).join("")}
+        </ul>
+      </div>
+      <div>
+        <h4 class="font-bold mb-3">Sell With Us</h4>
+        <ul class="space-y-2 text-gray-600">
+          <li><a href="#" class="hover:text-orange-600">Become a Seller</a></li>
+          <li><a href="#" class="hover:text-orange-600">Merchant Dashboard</a></li>
+          <li><a href="#" class="hover:text-orange-600">Affiliate Program</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4 class="font-bold mb-3">Stay Updated</h4>
+        <p class="text-gray-600 mb-3">Get $50 welcome vouchers.</p>
+        <input type="email" placeholder="Your email..." class="w-full border border-gray-300 rounded-lg px-4 py-2 mb-2"/>
+        <button class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 rounded-lg">Subscribe</button>
+      </div>
+    </div>
+    <div class="border-t border-gray-200 py-5 text-center text-xs text-gray-500">
+      © 2026 oraXpress Inc. All rights reserved. • Global Buyer Protection • 30-Day Return Guarantee
+    </div>
+  </footer>`;
+}
+
+/* =======================  HOME PAGE  ======================= */
+function renderHome() {
+  return `
+  ${header()}
+
+  <!-- HERO -->
+  <section class="relative bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white overflow-hidden">
+    <div class="max-w-7xl mx-auto px-4 py-16 md:py-24 grid md:grid-cols-2 gap-10 items-center">
+      <div class="fade-in">
+        <div class="flex gap-2 mb-4 flex-wrap">
+          <span class="bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full">MEGA SPRING FESTIVAL</span>
+          <span class="bg-yellow-500/90 text-black text-xs font-bold px-3 py-1 rounded-full">Limited Time Deal</span>
+        </div>
+        <h1 class="text-4xl md:text-6xl font-extrabold leading-tight mb-5">
+          Up to <span class="text-orange-400">75% Off</span><br/>Global Tech & Gadgets
+        </h1>
+        <p class="text-gray-300 mb-8 text-lg">Free Worldwide Shipping on Choice items over $15 with 7-day guarantee delivery.</p>
+        <a href="#/e-commerce" class="inline-block bg-orange-500 hover:bg-orange-600 text-white font-bold px-8 py-4 rounded-full text-lg shadow-lg shadow-orange-500/30">Shop Tech Deals →</a>
+      </div>
+      <div class="text-center">
+        <div class="text-[10rem] md:text-[14rem] drop-shadow-2xl">🎧</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- AUTH STRIP -->
+  <section class="max-w-7xl mx-auto px-4 -mt-8 relative z-10">
+    <div class="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+      <div class="flex flex-col md:flex-row items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 rounded-full bg-orange-100 grid place-items-center text-2xl">👤</div>
+          <div>
+            <h3 class="font-bold">Welcome to oraXpress</h3>
+            <p class="text-sm text-gray-500">Global buyer guarantees</p>
+          </div>
+        </div>
+        <div class="flex gap-3 w-full md:w-auto">
+          <button data-action="open-auth" class="flex-1 md:flex-none bg-orange-500 hover:bg-orange-600 text-white font-bold px-8 py-3 rounded-full">Sign In</button>
+          <button data-action="open-auth-register" class="flex-1 md:flex-none bg-gray-900 hover:bg-gray-800 text-white font-bold px-8 py-3 rounded-full">Register</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- VOUCHERS -->
+  <section class="max-w-7xl mx-auto px-4 mt-10">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-lg font-bold">🎟️ Exclusive Vouchers</h3>
+      <a href="#" class="text-orange-600 text-sm font-semibold">CLAIM</a>
+    </div>
+    <div class="grid md:grid-cols-2 gap-4">
+      <div class="bg-gradient-to-r from-orange-50 to-yellow-50 border border-orange-200 rounded-xl p-5 flex justify-between items-center">
+        <div class="flex items-center gap-4">
+          <div class="bg-orange-500 text-white font-bold rounded-lg px-3 py-2 text-center leading-tight"><div class="text-lg">$5</div><div class="text-[10px]">OFF</div></div>
+          <div><div class="font-bold">First Order Bonus</div><div class="text-sm text-gray-600">Orders over $15</div></div>
+        </div>
+        <span class="text-2xl">🎁</span>
+      </div>
+      <div class="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-xl p-5 flex justify-between items-center">
+        <div class="flex items-center gap-4">
+          <div class="bg-purple-500 text-white font-bold rounded-lg px-3 py-2 text-center leading-tight"><div class="text-lg">$20</div><div class="text-[10px]">OFF</div></div>
+          <div><div class="font-bold">Mega Tech Week</div><div class="text-sm text-gray-600">Orders over $100</div></div>
+        </div>
+        <span class="text-2xl">🎁</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- CATEGORIES -->
+  <section class="max-w-7xl mx-auto px-4 mt-14">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-2xl font-bold">🛍️ Popular Categories</h2>
+      <span class="text-sm text-gray-500">Over 100M+ global listings</span>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      ${state.categories.map(c => `
+        <a href="#/e-commerce" class="bg-white border border-gray-200 rounded-2xl p-5 text-center hover:shadow-lg hover:border-orange-300 transition">
+          <div class="text-4xl mb-3">${c.icon}</div>
+          <div class="font-semibold text-gray-800 text-sm">${c.name}</div>
+        </a>
+      `).join("")}
+    </div>
+  </section>
+
+  <!-- PRODUCTS -->
+  <section class="max-w-7xl mx-auto px-4 mt-14">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-2xl font-bold">🔥 Trending Now</h2>
+      <a href="#/e-commerce" class="text-orange-600 font-semibold text-sm">View All →</a>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      ${state.products.map(p => `
+        <div class="bg-white border border-gray-200 rounded-2xl overflow-hidden hover:shadow-xl transition group">
+          <div class="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 grid place-items-center text-7xl">
+            ${p.img}
+            <span class="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded">-${Math.round((1 - p.price/p.old)*100)}%</span>
+            <span class="absolute bottom-2 left-2 bg-gray-900/80 text-white text-[10px] font-semibold px-2 py-1 rounded-full">🔥 ${p.tag}</span>
+          </div>
+          <div class="p-3">
+            <div class="text-sm text-gray-800 line-clamp-2 h-10 mb-2">${p.name}</div>
+            <div class="flex items-baseline gap-2">
+              <span class="text-lg font-bold text-orange-600">$${p.price}</span>
+              <span class="text-xs text-gray-400 line-through">$${p.old}</span>
+            </div>
+            <div class="mt-2 h-1 bg-gray-100 rounded-full overflow-hidden">
+              <div class="h-full bg-orange-500" style="width:${p.claimed}%"></div>
+            </div>
+            <div class="text-[11px] text-gray-500 mt-1">${p.claimed}% claimed</div>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  </section>
+
+  <!-- SAAS PLATFORMS -->
+  <section class="max-w-7xl mx-auto px-4 mt-20 mb-16">
+    <div class="bg-gradient-to-br from-gray-900 to-gray-800 rounded-3xl p-8 md:p-12 text-white">
+      <div class="text-center mb-10">
+        <span class="bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full">SAAS PLATFORMS</span>
+        <h2 class="text-3xl md:text-4xl font-extrabold mt-4">oraXpress Business Solutions</h2>
+        <p class="text-gray-300 mt-3 max-w-2xl mx-auto">Empower retail stores, restaurants & schools with our cloud POS & ERP apps.</p>
+      </div>
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+        ${state.platforms.map(p => `
+          <a href="#/${p.slug}" class="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 hover:border-orange-400/50 transition group">
+            <div class="w-14 h-14 rounded-xl bg-gradient-to-br ${p.color} grid place-items-center text-3xl mb-4">${p.icon}</div>
+            <h3 class="text-xl font-bold mb-1">${p.name}</h3>
+            <p class="text-sm text-gray-300 mb-3">${p.desc}</p>
+            <div class="flex items-center justify-between">
+              <span class="text-xs bg-emerald-500/20 text-emerald-300 font-bold px-2 py-1 rounded">${p.status}</span>
+              <span class="text-orange-400 font-semibold text-sm group-hover:translate-x-1 transition">Explore →</span>
+            </div>
+          </a>
+        `).join("")}
+      </div>
+    </div>
+  </section>
+
+  ${footer()}`;
+}
+
+/* =======================  PLATFORM PAGE  ======================= */
+function renderPlatformPage(p) {
+  return `
+  ${header()}
+  <section class="bg-gradient-to-br ${p.color} text-white">
+    <div class="max-w-7xl mx-auto px-4 py-16 fade-in">
+      <div class="w-20 h-20 rounded-2xl bg-white/20 backdrop-blur grid place-items-center text-5xl mb-5">${p.icon}</div>
+      <span class="bg-white/20 text-xs font-bold px-3 py-1 rounded-full">${p.category}</span>
+      <h1 class="text-4xl md:text-5xl font-extrabold mt-4 mb-3">${p.name}</h1>
+      <p class="text-lg opacity-90 max-w-2xl">${p.desc}</p>
+      <div class="mt-6 flex gap-3 flex-wrap">
+        <button class="bg-white text-gray-900 font-bold px-6 py-3 rounded-full hover:bg-gray-100">Start 14-Day Free Trial</button>
+        <button class="bg-white/20 border border-white/30 font-bold px-6 py-3 rounded-full hover:bg-white/30">Try Demo</button>
+      </div>
+    </div>
+  </section>
+  <section class="max-w-7xl mx-auto px-4 py-16">
+    <div class="grid md:grid-cols-3 gap-6">
+      <div class="bg-white border rounded-2xl p-6"><div class="text-3xl mb-2">⚡</div><h3 class="font-bold text-lg mb-1">Fast Setup</h3><p class="text-gray-600 text-sm">Get up and running in minutes.</p></div>
+      <div class="bg-white border rounded-2xl p-6"><div class="text-3xl mb-2">🔒</div><h3 class="font-bold text-lg mb-1">Secure & Reliable</h3><p class="text-gray-600 text-sm">256-bit encryption, 99.9% uptime.</p></div>
+      <div class="bg-white border rounded-2xl p-6"><div class="text-3xl mb-2">🌍</div><h3 class="font-bold text-lg mb-1">Global Ready</h3><p class="text-gray-600 text-sm">Multi-currency, multi-language.</p></div>
+    </div>
+    <div class="mt-10 text-center">
+      <a href="#/" class="text-orange-600 font-semibold">← Back to Home</a>
+    </div>
+  </section>
+  ${footer()}`;
+}
+
+/* =======================  ADMIN  ======================= */
+function renderAdmin() {
+  if (!state.user) {
+    return `${header()}<div class="max-w-xl mx-auto py-24 text-center">
+      <h1 class="text-2xl font-bold mb-4">Admin Login Required</h1>
+      <button data-action="open-auth" class="bg-orange-500 text-white font-bold px-6 py-3 rounded-full">Sign In</button>
+    </div>`;
+  }
+
+  const stats = [
+    { label: "Total Platforms", value: state.platforms.length, icon: "🧩", color: "from-blue-500 to-indigo-500" },
+    { label: "Live Platforms", value: state.platforms.filter(p=>p.status==="LIVE").length, icon: "🟢", color: "from-emerald-500 to-teal-500" },
+    { label: "Categories", value: state.categories.length, icon: "📂", color: "from-purple-500 to-pink-500" },
+    { label: "Total Users", value: state.user ? 1 : 0, icon: "👥", color: "from-orange-500 to-red-500" }
+  ];
+
+  return `
+  ${header()}
+  <div class="max-w-7xl mx-auto px-4 py-8">
+    <h1 class="text-3xl font-bold mb-6">Super Admin Dashboard</h1>
+
+    ${state.demoMode ? `<div class="bg-yellow-50 border border-yellow-300 text-yellow-800 p-4 rounded-xl mb-6 text-sm">
+      ⚠️ Firebase configure করা হয়নি। এখন Demo Mode-এ চলছে। README দেখুন।
+    </div>` : ""}
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      ${stats.map(s => `
+        <div class="bg-white border rounded-2xl p-5">
+          <div class="w-12 h-12 rounded-xl bg-gradient-to-br ${s.color} grid place-items-center text-2xl text-white mb-3">${s.icon}</div>
+          <div class="text-3xl font-extrabold">${s.value}</div>
+          <div class="text-sm text-gray-500">${s.label}</div>
+        </div>
+      `).join("")}
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6">
+      <div class="bg-white border rounded-2xl p-6">
+        <h2 class="font-bold text-lg mb-4">🧩 Platforms</h2>
+        <div class="space-y-2 max-h-80 overflow-y-auto">
+          ${state.platforms.map(p => `
+            <div class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 border border-gray-100">
+              <div class="flex items-center gap-3">
+                <span class="text-2xl">${p.icon}</span>
+                <div><div class="font-semibold text-sm">${p.name}</div><div class="text-xs text-gray-500">/${p.slug}</div></div>
+              </div>
+              <span class="text-xs bg-emerald-100 text-emerald-700 font-bold px-2 py-1 rounded">${p.status}</span>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+      <div class="bg-white border rounded-2xl p-6">
+        <h2 class="font-bold text-lg mb-4">📂 Categories</h2>
+        <div class="grid grid-cols-2 gap-2">
+          ${state.categories.map(c => `
+            <div class="p-3 rounded-lg bg-gray-50 border border-gray-100 text-sm">
+              <span class="text-xl mr-2">${c.icon}</span>${c.name}
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white border rounded-2xl p-6 mt-6">
+      <h2 class="font-bold text-lg mb-2">📝 Audit Log</h2>
+      <p class="text-sm text-gray-500">Firebase connect করলে এখানে সব action-এর লগ দেখাবে।</p>
+    </div>
+  </div>
+  ${footer()}`;
+}
+
+/* =======================  ROUTER  ======================= */
+function render() {
+  const root = document.getElementById("app");
+  const route = state.route;
+
+  if (route === "/admin") { root.innerHTML = renderAdmin(); return; }
+
+  const slug = route.startsWith("/") ? route.slice(1) : route;
+  const platform = state.platforms.find(p => p.slug === slug);
+  if (platform) { root.innerHTML = renderPlatformPage(platform); return; }
+
+  root.innerHTML = renderHome();
+}
+
+/* =======================  AUTH MODAL  ======================= */
+function openAuth(mode = "login") {
+  const existing = document.getElementById("authModal");
+  if (existing) existing.remove();
+
+  const modal = document.createElement("div");
+  modal.id = "authModal";
+  modal.className = "fixed inset-0 bg-black/60 z-[100] grid place-items-center p-4";
+  modal.innerHTML = `
+    <div class="bg-white rounded-2xl w-full max-w-md p-8 relative">
+      <button data-close class="absolute top-4 right-4 text-gray-400 text-2xl leading-none">×</button>
+      <h2 class="text-2xl font-bold mb-1">${mode === "login" ? "Welcome Back" : "Create Account"}</h2>
+      <p class="text-sm text-gray-500 mb-6">Sign in to oraXpress</p>
+      <input id="authEmail" type="email" placeholder="Email" class="w-full border rounded-lg px-4 py-3 mb-3 focus:outline-none focus:border-orange-500"/>
+      <input id="authPass" type="password" placeholder="Password" class="w-full border rounded-lg px-4 py-3 mb-4 focus:outline-none focus:border-orange-500"/>
+      <button id="authSubmit" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-lg">
+        ${mode === "login" ? "Sign In" : "Register"}
+      </button>
+      <div id="authMsg" class="text-sm mt-3 text-center"></div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  modal.querySelector("[data-close]").onclick = () => modal.remove();
+  modal.querySelector("#authSubmit").onclick = async () => {
+    const email = modal.querySelector("#authEmail").value;
+    const pass = modal.querySelector("#authPass").value;
+    const msg = modal.querySelector("#authMsg");
+
+    if (state.demoMode) {
+      msg.className = "text-sm mt-3 text-center text-orange-600";
+      msg.textContent = "Demo Mode: Firebase configure করুন (README দেখুন)।";
+      return;
+    }
+    try {
+      if (mode === "login") await signInWithEmailAndPassword(auth, email, pass);
+      else await createUserWithEmailAndPassword(auth, email, pass);
+      modal.remove();
+    } catch (e) {
+      msg.className = "text-sm mt-3 text-center text-red-500";
+      msg.textContent = e.message;
+    }
+  };
+}
+
+/* =======================  GLOBAL CLICK HANDLERS  ======================= */
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-action]");
+  if (!t) return;
+  const a = t.dataset.action;
+  if (a === "open-auth") openAuth("login");
+  else if (a === "open-auth-register") openAuth("register");
+  else if (a === "logout") { if (auth) signOut(auth); }
+  else if (a === "go-admin") { location.hash = "/admin"; }
+});
+
+/* =======================  INIT  ======================= */
+async function init() {
+  if (!state.demoMode && auth) {
+    onAuthStateChanged(auth, async (u) => {
+      state.user = u;
+      if (u) {
+        try {
+          const snap = await getDoc(doc(db, "users", u.uid));
+          state.profile = snap.exists() ? snap.data() : null;
+        } catch (e) { console.warn(e); }
+      } else state.profile = null;
+      render();
+    });
+  }
+
+  try {
+    if (!state.demoMode) {
+      const catSnap = await getDocs(collection(db, "categories"));
+      state.categories = catSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const plSnap = await getDocs(collection(db, "platforms"));
+      state.platforms = plSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
+  } catch (e) { console.warn("Firestore load:", e); }
+
+  if (!state.categories.length) state.categories = DEMO_CATEGORIES;
+  if (!state.platforms.length)  state.platforms  = DEMO_PLATFORMS;
+  state.products = DEMO_PRODUCTS;
+
+  window.addEventListener("hashchange", () => {
+    state.route = location.hash.replace("#", "") || "/";
+    render();
+  });
+
+  render();
+}
+init();
+</script>
+</body>
+</html>
