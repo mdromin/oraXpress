@@ -148,7 +148,26 @@ async function fetchAuditLogs(){
     return s.docs.map(d=>({id:d.id, ...d.data()}));
   }catch(e){ return []; }
 }
-
+async function fetchProducts(){
+  if (state.demoMode) return lsGet("orax_products", DEMO_PRODUCTS);
+  try{
+    const s = await getDocs(collection(db,"products"));
+    return s.docs.map(d=>({id:d.id, ...d.data()}));
+  }catch(e){ return []; }
+}
+async function createProduct(data){
+  if (state.demoMode){ const id="pr-"+Date.now(); lsSet("orax_products", [...state.products, {id, ...data}]); return id; }
+  const r = await addDoc(collection(db,"products"), {...data, createdAt:serverTimestamp(), updatedAt:serverTimestamp()});
+  return r.id;
+}
+async function updateProduct(id, data){
+  if (state.demoMode){ lsSet("orax_products", state.products.map(p=>p.id===id?{...p,...data}:p)); return; }
+  await updateDoc(doc(db,"products",id), {...data, updatedAt:serverTimestamp()});
+}
+async function deleteProduct(id){
+  if (state.demoMode){ lsSet("orax_products", state.products.filter(p=>p.id!==id)); return; }
+  await deleteDoc(doc(db,"products",id));
+}
 async function createTenant(data){
   if (state.demoMode){ const id="tn-"+Date.now(); lsSet("orax_tenants", [...state.tenants, {id, ...data}]); return id; }
   const r = await addDoc(collection(db,"tenants"), {...data, createdAt:serverTimestamp(), updatedAt:serverTimestamp()});
@@ -332,7 +351,22 @@ function renderHome(){
   <section class="max-w-7xl mx-auto px-4 mt-14">
     <h2 class="text-2xl font-bold mb-5">🔥 Trending Now</h2>
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-      ${state.products.map(p=>`
+      ${<div id="productGrid" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+  ${state.products.map(p=>`
+    <a href="#/product/${p.id}" class="bg-white border rounded-2xl overflow-hidden hover:shadow-xl transition group block">
+      <div class="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 grid place-items-center text-7xl">
+        ${esc(p.img||"📦")}
+        ${p.old && p.old>p.price ? `<span class="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded">-${Math.round((1-p.price/p.old)*100)}%</span>`:""}
+      </div>
+      <div class="p-3">
+        <div class="text-sm text-gray-800 line-clamp-2 h-10 mb-2">${esc(p.name)}</div>
+        <div class="flex items-baseline gap-2">
+          <span class="text-lg font-bold text-orange-600">$${p.price}</span>
+          ${p.old?`<span class="text-xs text-gray-400 line-through">$${p.old}</span>`:""}
+        </div>
+      </div>
+    </a>`).join("")}
+</div>(p=>`
         <div class="bg-white border rounded-2xl overflow-hidden hover:shadow-xl transition">
           <div class="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 grid place-items-center text-7xl">
             ${p.img}
@@ -475,6 +509,7 @@ function renderAdmin(){
 
     <div class="flex gap-2 mb-6 border-b border-gray-200 overflow-x-auto">
       <button data-tab="platforms"  class="admin-tab px-4 py-3 font-semibold text-sm border-b-2 border-orange-500 text-orange-600 whitespace-nowrap">🧩 Platforms</button>
+      <button data-tab="products"   class="admin-tab px-4 py-3 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-800 whitespace-nowrap">🛍️ Products</button>
       <button data-tab="categories" class="admin-tab px-4 py-3 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-800 whitespace-nowrap">📂 Categories</button>
       <button data-tab="versions"   class="admin-tab px-4 py-3 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-800 whitespace-nowrap">📜 Versions</button>
       <button data-tab="tenants"    class="admin-tab px-4 py-3 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-800 whitespace-nowrap">🏢 Tenants</button>
@@ -521,6 +556,43 @@ function adminTabPlatforms(){
                 </td>
               </tr>`;
             }).join("")}
+          </tbody>
+        </table></div>`}
+  </div>`;
+}
+function adminTabProducts(){
+  return `
+  <div class="bg-white border rounded-2xl p-6">
+    <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+      <h2 class="font-bold text-xl">All Products</h2>
+      <button data-action="new-product" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-5 py-2.5 rounded-lg text-sm">+ New Product</button>
+    </div>
+    ${state.products.length===0
+      ? `<div class="text-center py-16 text-gray-500"><div class="text-5xl mb-3">🛍️</div><p>No products yet. Click "New Product" to add one.</p></div>`
+      : `<div class="overflow-x-auto"><table class="w-full text-sm">
+          <thead class="bg-gray-50 text-left text-gray-600">
+            <tr>
+              <th class="p-3">Image</th><th class="p-3">Name</th>
+              <th class="p-3">Price</th><th class="p-3">Old Price</th>
+              <th class="p-3">Tag</th><th class="p-3">Claimed</th>
+              <th class="p-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${state.products.map(p=>`
+              <tr class="border-t border-gray-100 hover:bg-gray-50">
+                <td class="p-3 text-3xl">${esc(p.img||"📦")}</td>
+                <td class="p-3 font-semibold max-w-xs">${esc(p.name)}</td>
+                <td class="p-3 font-bold text-orange-600">$${p.price}</td>
+                <td class="p-3 text-gray-400 line-through">${p.old?('$'+p.old):'—'}</td>
+                <td class="p-3"><span class="text-xs bg-gray-100 px-2 py-1 rounded">${esc(p.tag||"—")}</span></td>
+                <td class="p-3 text-gray-600">${p.claimed||0}%</td>
+                <td class="p-3 text-right whitespace-nowrap">
+                  <a href="#/product/${p.id}" class="text-blue-600 hover:underline text-xs font-semibold mr-3">View</a>
+                  <button data-action="edit-product" data-id="${p.id}" class="text-orange-600 text-xs font-semibold mr-3">Edit</button>
+                  <button data-action="delete-product" data-id="${p.id}" class="text-red-600 text-xs font-semibold">Del</button>
+                </td>
+              </tr>`).join("")}
           </tbody>
         </table></div>`}
   </div>`;
@@ -948,6 +1020,98 @@ function openVersionModal(platformId=null){
     }catch(e){ msg.className="text-sm text-red-600"; msg.textContent="Error: "+e.message; wrap.querySelector("#saveBtn").disabled=false; }
   };
 }
+  /* ===== PRODUCT MODAL ===== */
+function openProductModal(prod=null){
+  const editing = !!prod;
+  const d = prod || { name:"", price:0, old:0, img:"📦", tag:"Fast Selling", claimed:0, desc:"", categoryId:"", stock:100 };
+  const catOpts = state.categories.map(c=>`<option value="${c.id}" ${d.categoryId===c.id?"selected":""}>${esc(c.name)}</option>`).join("");
+
+  document.body.insertAdjacentHTML("beforeend", `
+  <div id="modalWrap" class="fixed inset-0 modal-bg z-[100] grid place-items-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl w-full max-w-2xl p-6 md:p-8 relative my-8 fade-in">
+      <button data-close class="absolute top-4 right-4 text-gray-400 text-2xl">×</button>
+      <h2 class="text-2xl font-bold mb-1">${editing?"Edit Product":"New Product"}</h2>
+      <p class="text-sm text-gray-500 mb-6">${editing?"Update product details.":"Add a product to your marketplace."}</p>
+
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="md:col-span-2">
+          <label class="block text-sm font-semibold mb-1">Product Name *</label>
+          <input id="p-name" value="${esc(d.name)}" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500"/>
+        </div>
+        <div>
+          <label class="block text-sm font-semibold mb-1">Price ($) *</label>
+          <input id="p-price" type="number" step="0.01" value="${d.price}" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500"/>
+        </div>
+        <div>
+          <label class="block text-sm font-semibold mb-1">Old Price ($)</label>
+          <input id="p-old" type="number" step="0.01" value="${d.old}" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500"/>
+        </div>
+        <div>
+          <label class="block text-sm font-semibold mb-1">Image (emoji)</label>
+          <input id="p-img" value="${esc(d.img||"📦")}" maxlength="4" class="w-full border rounded-lg px-4 py-2.5 text-2xl focus:outline-none focus:border-orange-500"/>
+        </div>
+        <div>
+          <label class="block text-sm font-semibold mb-1">Tag</label>
+          <select id="p-tag" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500">
+            ${["Fast Selling","Choice","Top Brand","Plus","New"].map(t=>`<option value="${t}" ${d.tag===t?"selected":""}>${t}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-semibold mb-1">Claimed (%)</label>
+          <input id="p-claimed" type="number" min="0" max="100" value="${d.claimed||0}" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500"/>
+        </div>
+        <div>
+          <label class="block text-sm font-semibold mb-1">Stock</label>
+          <input id="p-stock" type="number" value="${d.stock||100}" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500"/>
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-sm font-semibold mb-1">Category</label>
+          <select id="p-categoryId" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500">
+            <option value="">— Select —</option>${catOpts}
+          </select>
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-sm font-semibold mb-1">Description</label>
+          <textarea id="p-desc" rows="3" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500">${esc(d.desc||"")}</textarea>
+        </div>
+      </div>
+
+      <div id="formMsg" class="text-sm mt-4"></div>
+      <div class="flex justify-end gap-3 mt-6 pt-5 border-t">
+        <button data-close class="px-5 py-2.5 rounded-lg border font-semibold">Cancel</button>
+        <button id="saveBtn" class="px-5 py-2.5 rounded-lg bg-orange-500 text-white font-bold">${editing?"Save":"Create"}</button>
+      </div>
+    </div>
+  </div>`);
+  const wrap = document.getElementById("modalWrap");
+  wrap.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>wrap.remove());
+  wrap.querySelector("#saveBtn").onclick = async ()=>{
+    const name = wrap.querySelector("#p-name").value.trim();
+    const price = parseFloat(wrap.querySelector("#p-price").value) || 0;
+    const old = parseFloat(wrap.querySelector("#p-old").value) || 0;
+    const img = wrap.querySelector("#p-img").value.trim() || "📦";
+    const tag = wrap.querySelector("#p-tag").value;
+    const claimed = parseInt(wrap.querySelector("#p-claimed").value) || 0;
+    const stock = parseInt(wrap.querySelector("#p-stock").value) || 0;
+    const categoryId = wrap.querySelector("#p-categoryId").value;
+    const desc = wrap.querySelector("#p-desc").value.trim();
+    const msg = wrap.querySelector("#formMsg");
+    if(!name){ msg.className="text-sm text-red-600"; msg.textContent="Name required"; return; }
+    if(price<=0){ msg.className="text-sm text-red-600"; msg.textContent="Valid price required"; return; }
+    const data = { name, price, old, img, tag, claimed, stock, categoryId, desc };
+    try{
+      wrap.querySelector("#saveBtn").disabled = true;
+      if(editing) await updateProduct(d.id, data);
+      else {
+        const newId = await createProduct(data);
+        await logAction("PRODUCT_CREATED","product",newId,{name, price});
+      }
+      await reloadData(); wrap.remove(); render();
+      toast("✅ Product saved");
+    }catch(e){ msg.className="text-sm text-red-600"; msg.textContent="Error: "+e.message; wrap.querySelector("#saveBtn").disabled=false; }
+  };
+}
+/* ===== TENANT MODAL ===== */
 /* ===== TENANT MODAL ===== */
 function openTenantModal(t=null){
   const editing = !!t;
@@ -1110,11 +1274,59 @@ function openAuth(mode="login"){
 function render(){
   const root = document.getElementById("app");
   const route = state.route;
+
   if (route === "/admin"){ root.innerHTML = renderAdmin(); return; }
+
+  // product detail: /product/{id}
+  if (route.startsWith("/product/")){
+    const id = route.replace("/product/","");
+    const prod = state.products.find(p=>String(p.id)===id);
+    if (prod){ root.innerHTML = renderProductPage(prod); return; }
+  }
+
   const slug = route.startsWith("/") ? route.slice(1) : route;
   const platform = state.platforms.find(p=>p.slug===slug);
   if (platform){ root.innerHTML = renderPlatformPage(platform); return; }
   root.innerHTML = renderHome();
+}
+
+function renderProductPage(p){
+  const cat = state.categories.find(c=>c.id===p.categoryId);
+  const disc = p.old && p.old>p.price ? Math.round((1-p.price/p.old)*100) : 0;
+  return `
+  ${header()}
+  <div class="max-w-7xl mx-auto px-4 py-10">
+    <a href="#/" class="text-orange-600 text-sm font-semibold mb-5 inline-block">← Back to home</a>
+    <div class="grid md:grid-cols-2 gap-10">
+      <div class="bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl aspect-square grid place-items-center text-[12rem]">
+        ${esc(p.img||"📦")}
+      </div>
+      <div>
+        ${cat?`<span class="text-xs bg-orange-100 text-orange-700 font-bold px-3 py-1 rounded-full">${esc(cat.name)}</span>`:""}
+        <h1 class="text-3xl font-extrabold mt-3 mb-3">${esc(p.name)}</h1>
+        <div class="flex items-baseline gap-3 mb-4">
+          <span class="text-4xl font-extrabold text-orange-600">$${p.price}</span>
+          ${p.old?`<span class="text-xl text-gray-400 line-through">$${p.old}</span>`:""}
+          ${disc?`<span class="bg-red-500 text-white text-sm font-bold px-2 py-1 rounded">-${disc}%</span>`:""}
+        </div>
+        <div class="flex items-center gap-4 text-sm text-gray-600 mb-4">
+          <span>🔥 ${p.claimed||0}% claimed</span>
+          <span>📦 Stock: ${p.stock||0}</span>
+        </div>
+        <p class="text-gray-700 mb-6">${esc(p.desc||"No description.")}</p>
+        <div class="flex gap-3 flex-wrap">
+          <button class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-8 py-3 rounded-full">Add to Cart</button>
+          <button class="bg-gray-900 hover:bg-gray-800 text-white font-bold px-8 py-3 rounded-full">Buy Now</button>
+        </div>
+        <div class="mt-6 pt-6 border-t text-sm text-gray-500 space-y-1">
+          <div>✅ Free Worldwide Shipping</div>
+          <div>✅ 30-Day Return Guarantee</div>
+          <div>✅ Buyer Protection</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  ${footer()}`;
 }
 
 /* ===== VERSION STATUS ACTIONS ===== */
@@ -1171,7 +1383,14 @@ document.addEventListener("click", async (e)=>{
     if(a==="ver-approve")  return versionAction(t.dataset.id, "APPROVED", "VERSION_APPROVED");
     if(a==="ver-publish")  return versionAction(t.dataset.id, "LIVE", "VERSION_PUBLISHED");
     if(a==="ver-rollback") return versionAction(t.dataset.id, "ROLLED_BACK", "VERSION_ROLLED_BACK");
-    if(a==="new-tenant") return openTenantModal();
+    if(a==="new-product") return openProductModal();
+if(a==="edit-product"){ const pr=state.products.find(x=>x.id===t.dataset.id); if(pr) openProductModal(pr); return; }
+if(a==="delete-product"){ const pr=state.products.find(x=>x.id===t.dataset.id); if(!pr) return;
+  confirmDelete(`Delete product "${pr.name}"?`, async ()=>{
+    await deleteProduct(pr.id); await logAction("PRODUCT_DELETED","product",pr.id,{name:pr.name});
+    await reloadData(); render(); toast("🗑️ Deleted");
+  }); return;
+}if(a==="new-tenant") return openTenantModal();
 if(a==="edit-tenant"){ const tn=state.tenants.find(x=>x.id===t.dataset.id); if(tn) openTenantModal(tn); return; }
 if(a==="delete-tenant"){ const tn=state.tenants.find(x=>x.id===t.dataset.id); if(!tn) return;
   confirmDelete(`Delete tenant "${tn.businessName}"?`, async ()=>{
@@ -1203,7 +1422,7 @@ if (sel){
     tab.classList.add("border-orange-500","text-orange-600");
     const c = document.getElementById("adminTabContent");
     if(!c) return;
-    if(tab.dataset.tab==="platforms")  c.innerHTML = adminTabPlatforms();
+    if(tab.dataset.tab==="products")   c.innerHTML = adminTabProducts();
     if(tab.dataset.tab==="categories") c.innerHTML = adminTabCategories();
     if(tab.dataset.tab==="versions")   c.innerHTML = adminTabVersions();
     if(tab.dataset.tab==="tenants")    c.innerHTML = adminTabTenants();
@@ -1215,17 +1434,18 @@ if (sel){
 /* ===== DATA LOADER ===== */
 async function reloadData(){
   try{
-    const [c,p,v,tn,us,ac,al] = await Promise.all([
-      fetchCategories(), fetchPlatforms(), fetchVersions(),
-      fetchTenants(), fetchUsers(), fetchAccess(), fetchAuditLogs()
-    ]);
-    state.categories = c; state.platforms = p; state.versions = v;
-    state.tenants = tn; state.users = us; state.access = ac; state.auditLogs = al;
+    const [c,p,v,tn,us,ac,al,pr] = await Promise.all([
+  fetchCategories(), fetchPlatforms(), fetchVersions(),
+  fetchTenants(), fetchUsers(), fetchAccess(), fetchAuditLogs(),
+  fetchProducts()
+]);
+state.categories = c; state.platforms = p; state.versions = v;
+state.tenants = tn; state.users = us; state.access = ac; state.auditLogs = al;
+state.products = pr;
   }catch(e){ console.warn(e); }
   if(!state.categories.length && state.demoMode) state.categories = DEMO_CATEGORIES;
   if(!state.platforms.length  && state.demoMode) state.platforms  = DEMO_PLATFORMS;
   if(!state.versions.length   && state.demoMode) state.versions   = DEMO_VERSIONS;
-  state.products = DEMO_PRODUCTS;
 }
 
 /* ===== INIT ===== */
