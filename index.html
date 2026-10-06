@@ -25,7 +25,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import {
   getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc,
-  updateDoc, deleteDoc, serverTimestamp, query, orderBy, where
+  updateDoc, deleteDoc, serverTimestamp, query, orderBy, where, limit
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 /* ===== ⚙️ আপনার আসল Firebase config এখানে বসান ===== */
@@ -44,6 +44,7 @@ const state = {
   user: null, profile: null,
   route: location.hash.replace("#", "") || "/",
   categories: [], platforms: [], versions: [], products: [],
+  tenants: [], users: [], access: [], auditLogs: [],
   demoMode: !firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY"
 };
 
@@ -125,7 +126,57 @@ async function fetchVersions(){
   const s = await getDocs(collection(db,"platformVersions"));
   return s.docs.map(d=>({id:d.id, ...d.data()}));
 }
+async function fetchTenants(){
+  if (state.demoMode) return lsGet("orax_tenants", []);
+  const s = await getDocs(collection(db,"tenants"));
+  return s.docs.map(d=>({id:d.id, ...d.data()}));
+}
+async function fetchUsers(){
+  if (state.demoMode) return lsGet("orax_users", []);
+  const s = await getDocs(collection(db,"users"));
+  return s.docs.map(d=>({id:d.id, ...d.data()}));
+}
+async function fetchAccess(){
+  if (state.demoMode) return lsGet("orax_access", []);
+  const s = await getDocs(collection(db,"platformAccess"));
+  return s.docs.map(d=>({id:d.id, ...d.data()}));
+}
+async function fetchAuditLogs(){
+  if (state.demoMode) return lsGet("orax_audit", []);
+  try{
+    const s = await getDocs(query(collection(db,"auditLogs"), orderBy("timestamp","desc"), limit(50)));
+    return s.docs.map(d=>({id:d.id, ...d.data()}));
+  }catch(e){ return []; }
+}
 
+async function createTenant(data){
+  if (state.demoMode){ const id="tn-"+Date.now(); lsSet("orax_tenants", [...state.tenants, {id, ...data}]); return id; }
+  const r = await addDoc(collection(db,"tenants"), {...data, createdAt:serverTimestamp(), updatedAt:serverTimestamp()});
+  return r.id;
+}
+async function updateTenant(id, data){
+  if (state.demoMode){ lsSet("orax_tenants", state.tenants.map(t=>t.id===id?{...t,...data}:t)); return; }
+  await updateDoc(doc(db,"tenants",id), {...data, updatedAt:serverTimestamp()});
+}
+async function deleteTenant(id){
+  if (state.demoMode){ lsSet("orax_tenants", state.tenants.filter(t=>t.id!==id)); return; }
+  await deleteDoc(doc(db,"tenants",id));
+}
+async function updateUserRole(uid, role){
+  if (state.demoMode){ lsSet("orax_users", state.users.map(u=>u.id===uid?{...u, role}:u)); return; }
+  await updateDoc(doc(db,"users",uid), { role, updatedAt:serverTimestamp() });
+}
+async function setAccess(uid, platformId, status){
+  if (state.demoMode){
+    const next = state.access.filter(a=>!(a.userId===uid && a.platformId===platformId));
+    if (status) next.push({ id:`acc-${uid}-${platformId}`, userId:uid, platformId, status });
+    lsSet("orax_access", next);
+    return;
+  }
+  const id = `${uid}_${platformId}`;
+  if (!status) { await deleteDoc(doc(db,"platformAccess",id)); return; }
+  await setDoc(doc(db,"platformAccess",id), { userId:uid, platformId, status, updatedAt:serverTimestamp() });
+}
 async function createCategory(data){
   if (state.demoMode){ const id="cat-"+Date.now(); lsSet(LS.CAT, [...state.categories, {id, ...data}]); return id; }
   const r = await addDoc(collection(db,"categories"), {...data, createdAt:serverTimestamp(), updatedAt:serverTimestamp()});
@@ -396,14 +447,14 @@ function renderAdmin(){
     </div>`;
   }
 
-  const stats = [
-    { label:"Platforms", value:state.platforms.length, icon:"🧩", color:"from-blue-500 to-indigo-500" },
-    { label:"Live Platforms", value:state.platforms.filter(p=>p.status==="LIVE").length, icon:"🟢", color:"from-emerald-500 to-teal-500" },
-    { label:"Categories", value:state.categories.length, icon:"📂", color:"from-purple-500 to-pink-500" },
-    { label:"Total Versions", value:state.versions.length, icon:"📜", color:"from-orange-500 to-red-500" },
-    { label:"Pending Approval", value:state.versions.filter(v=>v.status==="TESTING").length, icon:"⏳", color:"from-yellow-500 to-amber-600" },
-    { label:"Demo Mode", value:state.demoMode?"ON":"OFF", icon:"⚙️", color:"from-gray-500 to-gray-700" }
-  ];
+ const stats = [
+  { label:"Platforms", value:state.platforms.length, icon:"🧩", color:"from-blue-500 to-indigo-500" },
+  { label:"Live", value:state.platforms.filter(p=>p.status==="LIVE").length, icon:"🟢", color:"from-emerald-500 to-teal-500" },
+  { label:"Categories", value:state.categories.length, icon:"📂", color:"from-purple-500 to-pink-500" },
+  { label:"Versions", value:state.versions.length, icon:"📜", color:"from-orange-500 to-red-500" },
+  { label:"Tenants", value:state.tenants.length, icon:"🏢", color:"from-cyan-500 to-blue-600" },
+  { label:"Users", value:state.users.length, icon:"👥", color:"from-pink-500 to-rose-600" }
+];
 
   return `
   ${header()}
@@ -426,6 +477,8 @@ function renderAdmin(){
       <button data-tab="platforms"  class="admin-tab px-4 py-3 font-semibold text-sm border-b-2 border-orange-500 text-orange-600 whitespace-nowrap">🧩 Platforms</button>
       <button data-tab="categories" class="admin-tab px-4 py-3 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-800 whitespace-nowrap">📂 Categories</button>
       <button data-tab="versions"   class="admin-tab px-4 py-3 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-800 whitespace-nowrap">📜 Versions</button>
+      <button data-tab="tenants"    class="admin-tab px-4 py-3 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-800 whitespace-nowrap">🏢 Tenants</button>
+      <button data-tab="users"      class="admin-tab px-4 py-3 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-800 whitespace-nowrap">👥 Users</button>
       <button data-tab="audit"      class="admin-tab px-4 py-3 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-800 whitespace-nowrap">📝 Audit Log</button>
     </div>
 
@@ -546,11 +599,99 @@ function adminTabVersions(){
   </div>`;
 }
 
+function adminTabTenants(){
+  return `
+  <div class="bg-white border rounded-2xl p-6">
+    <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+      <h2 class="font-bold text-xl">All Tenants (Customers)</h2>
+      <button data-action="new-tenant" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-5 py-2.5 rounded-lg text-sm">+ New Tenant</button>
+    </div>
+    ${state.tenants.length===0
+      ? `<div class="text-center py-16 text-gray-500"><div class="text-5xl mb-3">🏢</div><p>No tenants yet. Customers will appear here.</p></div>`
+      : `<div class="overflow-x-auto"><table class="w-full text-sm">
+          <thead class="bg-gray-50 text-left text-gray-600">
+            <tr>
+              <th class="p-3">Business Name</th><th class="p-3">Owner</th>
+              <th class="p-3">Email</th><th class="p-3">Phone</th>
+              <th class="p-3">Status</th><th class="p-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${state.tenants.map(t=>`
+              <tr class="border-t border-gray-100 hover:bg-gray-50">
+                <td class="p-3 font-semibold">${esc(t.businessName)}</td>
+                <td class="p-3">${esc(t.ownerName||"—")}</td>
+                <td class="p-3 text-gray-600">${esc(t.email||"—")}</td>
+                <td class="p-3 text-gray-600">${esc(t.phone||"—")}</td>
+                <td class="p-3"><span class="text-xs font-bold px-2 py-1 rounded ${t.status==='ACTIVE'?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-700'}">${esc(t.status||'ACTIVE')}</span></td>
+                <td class="p-3 text-right whitespace-nowrap">
+                  <button data-action="edit-tenant" data-id="${t.id}" class="text-orange-600 text-xs font-semibold mr-3">Edit</button>
+                  <button data-action="delete-tenant" data-id="${t.id}" class="text-red-600 text-xs font-semibold">Delete</button>
+                </td>
+              </tr>`).join("")}
+          </tbody>
+        </table></div>`}
+  </div>`;
+}
+
+function adminTabUsers(){
+  return `
+  <div class="bg-white border rounded-2xl p-6">
+    <h2 class="font-bold text-xl mb-5">All Users</h2>
+    ${state.users.length===0
+      ? `<div class="text-center py-16 text-gray-500"><div class="text-5xl mb-3">👥</div><p>No users yet.</p></div>`
+      : `<div class="overflow-x-auto"><table class="w-full text-sm">
+          <thead class="bg-gray-50 text-left text-gray-600">
+            <tr>
+              <th class="p-3">Email</th><th class="p-3">Role</th>
+              <th class="p-3">Platform Access</th><th class="p-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${state.users.map(u=>{
+              const userAccess = state.access.filter(a=>a.userId===u.id && a.status==="ACTIVE");
+              return `
+              <tr class="border-t border-gray-100 hover:bg-gray-50">
+                <td class="p-3 font-semibold">${esc(u.email||u.id.slice(0,8))}</td>
+                <td class="p-3">
+                  <select data-action="change-role" data-id="${u.id}" class="border rounded px-2 py-1 text-xs font-semibold">
+                    <option value="USER" ${u.role==='USER'?'selected':''}>USER</option>
+                    <option value="PLATFORM_ADMIN" ${u.role==='PLATFORM_ADMIN'?'selected':''}>PLATFORM_ADMIN</option>
+                    <option value="SUPER_ADMIN" ${u.role==='SUPER_ADMIN'?'selected':''}>SUPER_ADMIN</option>
+                  </select>
+                </td>
+                <td class="p-3 text-xs text-gray-600">
+                  ${userAccess.length === 0 ? '<span class="text-gray-400">None</span>' : userAccess.map(a=>{
+                    const p = state.platforms.find(x=>x.id===a.platformId);
+                    return `<span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded mr-1">${esc(p?.name||a.platformId)}</span>`;
+                  }).join("")}
+                </td>
+                <td class="p-3 text-right">
+                  <button data-action="manage-access" data-id="${u.id}" class="text-orange-600 text-xs font-semibold">Manage Access</button>
+                </td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table></div>`}
+  </div>`;
+}
+
 function adminTabAudit(){
   return `
   <div class="bg-white border rounded-2xl p-6">
-    <h2 class="font-bold text-xl mb-4">📝 Audit Log</h2>
-    <p class="text-sm text-gray-500">Firebase-এ auditLogs collection-এ সেভ হচ্ছে। Console → Firestore → auditLogs দেখুন।</p>
+    <h2 class="font-bold text-xl mb-5">📝 Audit Log (Last 50)</h2>
+    ${state.auditLogs.length===0
+      ? `<div class="text-center py-16 text-gray-500"><div class="text-5xl mb-3">📝</div><p>No logs yet. Actions will appear here.</p></div>`
+      : `<div class="space-y-2">
+          ${state.auditLogs.map(l=>`
+            <div class="flex items-start gap-3 p-3 rounded-lg border border-gray-100 hover:bg-gray-50">
+              <div class="w-8 h-8 rounded-full bg-orange-100 grid place-items-center text-sm shrink-0">📌</div>
+              <div class="flex-1 text-sm">
+                <div><b>${esc(l.action)}</b> <span class="text-gray-500">on</span> <span class="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded">${esc(l.entityType)}</span></div>
+                <div class="text-xs text-gray-500">${esc(l.actorEmail||l.actorId||"system")} • ${fmtDate(l.timestamp)}</div>
+              </div>
+            </div>`).join("")}
+        </div>`}
   </div>`;
 }
 
@@ -807,7 +948,106 @@ function openVersionModal(platformId=null){
     }catch(e){ msg.className="text-sm text-red-600"; msg.textContent="Error: "+e.message; wrap.querySelector("#saveBtn").disabled=false; }
   };
 }
+/* ===== TENANT MODAL ===== */
+function openTenantModal(t=null){
+  const editing = !!t;
+  const d = t || { businessName:"", ownerName:"", email:"", phone:"", status:"ACTIVE" };
+  document.body.insertAdjacentHTML("beforeend", `
+  <div id="modalWrap" class="fixed inset-0 modal-bg z-[100] grid place-items-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl w-full max-w-lg p-6 md:p-8 relative my-8 fade-in">
+      <button data-close class="absolute top-4 right-4 text-gray-400 text-2xl">×</button>
+      <h2 class="text-2xl font-bold mb-1">${editing?"Edit Tenant":"New Tenant"}</h2>
+      <p class="text-sm text-gray-500 mb-6">Add a customer/company</p>
+      <label class="block text-sm font-semibold mb-1">Business Name *</label>
+      <input id="t-businessName" value="${esc(d.businessName)}" class="w-full border rounded-lg px-4 py-2.5 mb-4 focus:outline-none focus:border-orange-500"/>
+      <label class="block text-sm font-semibold mb-1">Owner Name</label>
+      <input id="t-ownerName" value="${esc(d.ownerName)}" class="w-full border rounded-lg px-4 py-2.5 mb-4 focus:outline-none focus:border-orange-500"/>
+      <label class="block text-sm font-semibold mb-1">Email</label>
+      <input id="t-email" type="email" value="${esc(d.email)}" class="w-full border rounded-lg px-4 py-2.5 mb-4 focus:outline-none focus:border-orange-500"/>
+      <label class="block text-sm font-semibold mb-1">Phone</label>
+      <input id="t-phone" value="${esc(d.phone)}" class="w-full border rounded-lg px-4 py-2.5 mb-4 focus:outline-none focus:border-orange-500"/>
+      <label class="block text-sm font-semibold mb-1">Status</label>
+      <select id="t-status" class="w-full border rounded-lg px-4 py-2.5 mb-4 focus:outline-none focus:border-orange-500">
+        <option value="ACTIVE" ${d.status==="ACTIVE"?"selected":""}>ACTIVE</option>
+        <option value="SUSPENDED" ${d.status==="SUSPENDED"?"selected":""}>SUSPENDED</option>
+      </select>
+      <div id="formMsg" class="text-sm"></div>
+      <div class="flex justify-end gap-3 mt-6 pt-5 border-t">
+        <button data-close class="px-5 py-2.5 rounded-lg border font-semibold">Cancel</button>
+        <button id="saveBtn" class="px-5 py-2.5 rounded-lg bg-orange-500 text-white font-bold">${editing?"Save":"Create"}</button>
+      </div>
+    </div>
+  </div>`);
+  const wrap = document.getElementById("modalWrap");
+  wrap.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>wrap.remove());
+  wrap.querySelector("#saveBtn").onclick = async ()=>{
+    const data = {
+      businessName: wrap.querySelector("#t-businessName").value.trim(),
+      ownerName: wrap.querySelector("#t-ownerName").value.trim(),
+      email: wrap.querySelector("#t-email").value.trim(),
+      phone: wrap.querySelector("#t-phone").value.trim(),
+      status: wrap.querySelector("#t-status").value
+    };
+    const msg = wrap.querySelector("#formMsg");
+    if(!data.businessName){ msg.className="text-sm text-red-600"; msg.textContent="Business name required"; return; }
+    try{
+      if(editing) await updateTenant(d.id, data);
+      else {
+        const newId = await createTenant(data);
+        await logAction("TENANT_CREATED","tenant",newId,{businessName:data.businessName});
+      }
+      await reloadData(); wrap.remove(); render();
+      toast("✅ Tenant saved");
+    }catch(e){ msg.className="text-sm text-red-600"; msg.textContent="Error: "+e.message; }
+  };
+}
 
+/* ===== ACCESS MODAL ===== */
+function openAccessModal(user){
+  const rows = state.platforms.map(p=>{
+    const a = state.access.find(x=>x.userId===user.id && x.platformId===p.id);
+    const active = a?.status === "ACTIVE";
+    return `
+      <label class="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+        <span class="flex items-center gap-3">
+          <span class="text-2xl">${esc(p.icon||"🧩")}</span>
+          <span class="font-semibold text-sm">${esc(p.name)}</span>
+        </span>
+        <input type="checkbox" data-platform="${p.id}" ${active?"checked":""} class="w-5 h-5 accent-orange-500"/>
+      </label>`;
+  }).join("");
+
+  document.body.insertAdjacentHTML("beforeend", `
+  <div id="modalWrap" class="fixed inset-0 modal-bg z-[100] grid place-items-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl w-full max-w-lg p-6 md:p-8 relative my-8 fade-in">
+      <button data-close class="absolute top-4 right-4 text-gray-400 text-2xl">×</button>
+      <h2 class="text-2xl font-bold mb-1">Platform Access</h2>
+      <p class="text-sm text-gray-500 mb-6">${esc(user.email)}</p>
+      ${state.platforms.length === 0
+        ? `<div class="text-center py-8 text-gray-400">No platforms. Create platforms first.</div>`
+        : `<div class="space-y-2 max-h-96 overflow-y-auto">${rows}</div>`}
+      <div class="flex justify-end gap-3 mt-6 pt-5 border-t">
+        <button data-close class="px-5 py-2.5 rounded-lg border font-semibold">Close</button>
+        <button id="saveBtn" class="px-5 py-2.5 rounded-lg bg-orange-500 text-white font-bold">Save Access</button>
+      </div>
+    </div>
+  </div>`);
+  const wrap = document.getElementById("modalWrap");
+  wrap.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>wrap.remove());
+  wrap.querySelector("#saveBtn").onclick = async ()=>{
+    try{
+      const checkboxes = wrap.querySelectorAll("[data-platform]");
+      for(const cb of checkboxes){
+        await setAccess(user.id, cb.dataset.platform, cb.checked ? "ACTIVE" : null);
+      }
+      await logAction("ACCESS_UPDATED","platformAccess",user.id,{userEmail:user.email});
+      await reloadData(); wrap.remove(); render();
+      toast("✅ Access updated");
+    }catch(e){ toast("❌ "+e.message); }
+  };
+}
+
+/* ===== CONFIRM ===== */
 /* ===== CONFIRM ===== */
 function confirmDelete(message, onConfirm){
   document.body.insertAdjacentHTML("beforeend", `
@@ -931,7 +1171,28 @@ document.addEventListener("click", async (e)=>{
     if(a==="ver-approve")  return versionAction(t.dataset.id, "APPROVED", "VERSION_APPROVED");
     if(a==="ver-publish")  return versionAction(t.dataset.id, "LIVE", "VERSION_PUBLISHED");
     if(a==="ver-rollback") return versionAction(t.dataset.id, "ROLLED_BACK", "VERSION_ROLLED_BACK");
+    if(a==="new-tenant") return openTenantModal();
+if(a==="edit-tenant"){ const tn=state.tenants.find(x=>x.id===t.dataset.id); if(tn) openTenantModal(tn); return; }
+if(a==="delete-tenant"){ const tn=state.tenants.find(x=>x.id===t.dataset.id); if(!tn) return;
+  confirmDelete(`Delete tenant "${tn.businessName}"?`, async ()=>{
+    await deleteTenant(tn.id); await logAction("TENANT_DELETED","tenant",tn.id,{businessName:tn.businessName});
+    await reloadData(); render(); toast("🗑️ Deleted");
+  }); return;
+}
+if(a==="manage-access"){ const u=state.users.find(x=>x.id===t.dataset.id); if(u) openAccessModal(u); return; }
   }
+  const sel = e.target.closest("[data-action='change-role']");
+if (sel){
+  const uid = sel.dataset.id;
+  const newRole = sel.value;
+  try{
+    await updateUserRole(uid, newRole);
+    await logAction("USER_ROLE_CHANGED","user",uid,{newRole});
+    await reloadData(); render();
+    toast("✅ Role updated");
+  }catch(err){ toast("❌ "+err.message); }
+  return;
+}
   const tab = e.target.closest(".admin-tab");
   if (tab){
     document.querySelectorAll(".admin-tab").forEach(b=>{
@@ -945,6 +1206,8 @@ document.addEventListener("click", async (e)=>{
     if(tab.dataset.tab==="platforms")  c.innerHTML = adminTabPlatforms();
     if(tab.dataset.tab==="categories") c.innerHTML = adminTabCategories();
     if(tab.dataset.tab==="versions")   c.innerHTML = adminTabVersions();
+    if(tab.dataset.tab==="tenants")    c.innerHTML = adminTabTenants();
+    if(tab.dataset.tab==="users")      c.innerHTML = adminTabUsers();
     if(tab.dataset.tab==="audit")      c.innerHTML = adminTabAudit();
   }
 });
@@ -952,8 +1215,12 @@ document.addEventListener("click", async (e)=>{
 /* ===== DATA LOADER ===== */
 async function reloadData(){
   try{
-    const [c,p,v] = await Promise.all([fetchCategories(), fetchPlatforms(), fetchVersions()]);
+    const [c,p,v,tn,us,ac,al] = await Promise.all([
+      fetchCategories(), fetchPlatforms(), fetchVersions(),
+      fetchTenants(), fetchUsers(), fetchAccess(), fetchAuditLogs()
+    ]);
     state.categories = c; state.platforms = p; state.versions = v;
+    state.tenants = tn; state.users = us; state.access = ac; state.auditLogs = al;
   }catch(e){ console.warn(e); }
   if(!state.categories.length && state.demoMode) state.categories = DEMO_CATEGORIES;
   if(!state.platforms.length  && state.demoMode) state.platforms  = DEMO_PLATFORMS;
