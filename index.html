@@ -4,48 +4,46 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>oraXpress — Global Marketplace & SaaS Platform</title>
-<meta name="description" content="oraXpress — Global marketplace & SaaS platform for accounting, e-commerce, restaurant, school, inventory." />
+<meta name="description" content="oraXpress — Global marketplace & SaaS platform." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛒</text></svg>" />
 <script src="https://cdn.tailwindcss.com"></script>
-
 <style>
   html { scroll-behavior: smooth; }
-  .line-clamp-2 {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  .fade-in { animation: fadeIn 0.35s ease-out; }
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .line-clamp-2 { display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden; }
+  .fade-in { animation: fadeIn 0.3s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(6px);} to { opacity:1; transform:none;} }
+  /* modal overlay */
+  .modal-bg { background: rgba(15,23,42,0.65); }
 </style>
 </head>
 <body class="bg-gray-50 text-gray-900 font-sans antialiased">
-
 <div id="app"></div>
 
-<!-- Firebase (modular CDN) -->
 <script type="module">
+/* =========================================================================
+   FIREBASE SDK
+   ========================================================================= */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, signOut
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import {
-  getFirestore, collection, doc, getDoc, getDocs
+  getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc,
+  updateDoc, deleteDoc, serverTimestamp, query, orderBy
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 /* =========================================================================
    ⚙️ STEP 1: Firebase Console থেকে নিচের মানগুলো বসান
-   না বসালে সাইট Demo Mode-এ চলবে (কিন্তু তারপরেও সুন্দর দেখাবে)
+   Demo mode-এও CRUD কাজ করবে (localStorage-এ সেভ হবে)
    ========================================================================= */
 const firebaseConfig = {
-  apiKey:            "AIzaSyC8ChMmwlHlqPfa8vGcMsaemXL_-EaB0C0",
-  authDomain:        "oraxpress2026.firebaseapp.com",
-  projectId:         "oraxpress2026",
-  storageBucket:     "oraxpress2026.firebasestorage.app",
-  messagingSenderId: "812551163924",
-  appId:             "1:812551163924:web:84f71960d3a548104c5701"
+  apiKey:            "YOUR_API_KEY",
+  authDomain:        "YOUR_PROJECT.firebaseapp.com",
+  projectId:         "YOUR_PROJECT_ID",
+  storageBucket:     "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId:             "YOUR_APP_ID"
 };
 
 /* =======================  STATE  ======================= */
@@ -56,7 +54,8 @@ const state = {
   categories: [],
   platforms: [],
   products: [],
-  demoMode: !firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY"
+  demoMode: !firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY",
+  loading: true
 };
 
 let app = null, auth = null, db = null;
@@ -65,30 +64,27 @@ if (!state.demoMode) {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
-  } catch (e) {
-    console.warn("Firebase init failed:", e);
-    state.demoMode = true;
-  }
+  } catch (e) { console.warn(e); state.demoMode = true; }
 }
 
-/* =======================  DEMO DATA  ======================= */
+/* =======================  DEMO (fallback) DATA  ======================= */
 const DEMO_CATEGORIES = [
-  { id: "electronics", name: "Consumer Electronics", icon: "📺" },
-  { id: "phones",      name: "Phones & Accessories",  icon: "📱" },
-  { id: "computers",   name: "Computers & Office",    icon: "💻" },
-  { id: "home",        name: "Home & Appliances",     icon: "🏠" },
-  { id: "fashion",     name: "Fashion & Apparel",     icon: "👕" },
-  { id: "beauty",      name: "Beauty & Health",       icon: "💄" },
-  { id: "sports",      name: "Sports & Outdoors",     icon: "🏕️" },
-  { id: "toys",        name: "Toys & Hobbies",        icon: "🎮" }
+  { id: "cat-electronics", name: "Consumer Electronics", icon: "📺", order: 1 },
+  { id: "cat-phones",      name: "Phones & Accessories",  icon: "📱", order: 2 },
+  { id: "cat-computers",   name: "Computers & Office",    icon: "💻", order: 3 },
+  { id: "cat-home",        name: "Home & Appliances",     icon: "🏠", order: 4 },
+  { id: "cat-fashion",     name: "Fashion & Apparel",     icon: "👕", order: 5 },
+  { id: "cat-beauty",      name: "Beauty & Health",       icon: "💄", order: 6 },
+  { id: "cat-sports",      name: "Sports & Outdoors",     icon: "🏕️", order: 7 },
+  { id: "cat-toys",        name: "Toys & Hobbies",        icon: "🎮", order: 8 }
 ];
 
 const DEMO_PLATFORMS = [
-  { id: "hisabai",    slug: "hisabai",    name: "Hisab AI",              category: "Accounting", desc: "Automated Cloud Invoicing & Financial Ledger",     icon: "🧮", color: "from-blue-600 to-indigo-600",    status: "LIVE" },
-  { id: "ecommerce",  slug: "e-commerce", name: "oraXpress Marketplace", category: "E-commerce", desc: "Global buyer-seller marketplace with protection",  icon: "🛒", color: "from-orange-500 to-red-500",      status: "LIVE" },
-  { id: "restaurant", slug: "restaurant", name: "oraRestaurant POS",     category: "Restaurant", desc: "Modern Cloud POS & Kitchen Display System",        icon: "🍽️", color: "from-red-500 to-pink-600",       status: "LIVE" },
-  { id: "school",     slug: "school",     name: "oraSchool ERP",         category: "Education",  desc: "All-in-One Academy & Student ERP",                 icon: "🎓", color: "from-emerald-500 to-teal-600",   status: "LIVE" },
-  { id: "inventory",  slug: "inventory",  name: "oraInventory",          category: "Business",   desc: "Multi-Warehouse Stock & Order Management",         icon: "📦", color: "from-purple-600 to-violet-600",  status: "LIVE" }
+  { id: "pl-hisabai",    slug: "hisabai",    name: "Hisab AI",              categoryId: "cat-accounting", categoryName: "Accounting", desc: "Automated Cloud Invoicing & Financial Ledger",     icon: "🧮", color: "from-blue-600 to-indigo-600",    status: "LIVE", type: "PUBLIC_PRODUCT" },
+  { id: "pl-ecommerce",  slug: "e-commerce", name: "oraXpress Marketplace", categoryId: "cat-ecommerce",  categoryName: "E-commerce",  desc: "Global buyer-seller marketplace with protection",  icon: "🛒", color: "from-orange-500 to-red-500",      status: "LIVE", type: "PUBLIC_PRODUCT" },
+  { id: "pl-restaurant", slug: "restaurant", name: "oraRestaurant POS",     categoryId: "cat-restaurant", categoryName: "Restaurant",  desc: "Modern Cloud POS & Kitchen Display System",        icon: "🍽️", color: "from-red-500 to-pink-600",       status: "LIVE", type: "PUBLIC_PRODUCT" },
+  { id: "pl-school",     slug: "school",     name: "oraSchool ERP",         categoryId: "cat-education",  categoryName: "Education",   desc: "All-in-One Academy & Student ERP",                 icon: "🎓", color: "from-emerald-500 to-teal-600",   status: "LIVE", type: "PUBLIC_PRODUCT" },
+  { id: "pl-inventory",  slug: "inventory",  name: "oraInventory",          categoryId: "cat-business",   categoryName: "Business",    desc: "Multi-Warehouse Stock & Order Management",         icon: "📦", color: "from-purple-600 to-violet-600",  status: "LIVE", type: "PUBLIC_PRODUCT" }
 ];
 
 const DEMO_PRODUCTS = [
@@ -102,7 +98,98 @@ const DEMO_PRODUCTS = [
   { id: 8, name: "High-Speed Hair Dryer 110,000 RPM Brushless Motor", price: 39.99, old: 99.99, img: "💨", claimed: 89, tag: "Plus" }
 ];
 
-/* =======================  HEADER  ======================= */
+/* =======================  DATA LAYER  ======================= */
+/* Demo mode-এ localStorage, real mode-এ Firestore */
+
+const LS_KEY_CAT = "oraxpress_categories";
+const LS_KEY_PL  = "oraxpress_platforms";
+
+function loadLS(key, fallback) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+  catch { return fallback; }
+}
+function saveLS(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+}
+
+async function fetchCategories() {
+  if (state.demoMode) return loadLS(LS_KEY_CAT, DEMO_CATEGORIES);
+  const snap = await getDocs(query(collection(db, "categories"), orderBy("order", "asc")));
+  const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return list.length ? list : [];
+}
+
+async function fetchPlatforms() {
+  if (state.demoMode) return loadLS(LS_KEY_PL, DEMO_PLATFORMS);
+  const snap = await getDocs(collection(db, "platforms"));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+async function createCategory(data) {
+  if (state.demoMode) {
+    const id = "cat-" + Date.now();
+    const next = [...state.categories, { id, ...data }];
+    saveLS(LS_KEY_CAT, next);
+    return id;
+  }
+  const ref = await addDoc(collection(db, "categories"), { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  return ref.id;
+}
+
+async function updateCategory(id, data) {
+  if (state.demoMode) {
+    const next = state.categories.map(c => c.id === id ? { ...c, ...data } : c);
+    saveLS(LS_KEY_CAT, next);
+    return;
+  }
+  await updateDoc(doc(db, "categories", id), { ...data, updatedAt: serverTimestamp() });
+}
+
+async function deleteCategory(id) {
+  if (state.demoMode) {
+    saveLS(LS_KEY_CAT, state.categories.filter(c => c.id !== id));
+    return;
+  }
+  await deleteDoc(doc(db, "categories", id));
+}
+
+async function createPlatform(data) {
+  if (state.demoMode) {
+    const id = "pl-" + Date.now();
+    const next = [...state.platforms, { id, ...data }];
+    saveLS(LS_KEY_PL, next);
+    return id;
+  }
+  const ref = await addDoc(collection(db, "platforms"), { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  return ref.id;
+}
+
+async function updatePlatform(id, data) {
+  if (state.demoMode) {
+    const next = state.platforms.map(p => p.id === id ? { ...p, ...data } : p);
+    saveLS(LS_KEY_PL, next);
+    return;
+  }
+  await updateDoc(doc(db, "platforms", id), { ...data, updatedAt: serverTimestamp() });
+}
+
+async function deletePlatform(id) {
+  if (state.demoMode) {
+    saveLS(LS_KEY_PL, state.platforms.filter(p => p.id !== id));
+    return;
+  }
+  await deleteDoc(doc(db, "platforms", id));
+}
+
+/* =======================  HELPERS  ======================= */
+function slugify(s) {
+  return s.toString().toLowerCase().trim()
+    .replace(/[^\w\s-]/g, "").replace(/[\s_]+/g, "-").replace(/-+/g, "-");
+}
+function uid(prefix="id") { return prefix + "-" + Math.random().toString(36).slice(2,9); }
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* =======================  HEADER & FOOTER  ======================= */
 function header() {
   const right = state.user
     ? `<div class="flex items-center gap-2">
@@ -112,7 +199,7 @@ function header() {
     : `<button data-action="open-auth" class="text-sm font-semibold bg-orange-500 text-white px-4 py-2 rounded-full hover:bg-orange-600">Sign In</button>`;
 
   return `
-  <header class="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-gray-200">
+  <header class="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-gray-200">
     <div class="max-w-7xl mx-auto px-4 py-3 flex items-center gap-4">
       <a href="#/" class="flex items-center gap-2 shrink-0">
         <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-orange-500 to-red-500 grid place-items-center text-white font-bold">oX</div>
@@ -124,14 +211,13 @@ function header() {
       <nav class="hidden lg:flex items-center gap-6 text-sm font-medium text-gray-700">
         <a href="#/" class="hover:text-orange-600">Home</a>
         <a href="#/e-commerce" class="hover:text-orange-600">Marketplace</a>
-        <a href="#/hisabai" class="hover:text-orange-600">SaaS</a>
+        <a href="#/admin" class="hover:text-orange-600">Admin</a>
       </nav>
       ${right}
     </div>
   </header>`;
 }
 
-/* =======================  FOOTER  ======================= */
 function footer() {
   return `
   <footer class="bg-gray-100 border-t border-gray-200 mt-16">
@@ -142,42 +228,37 @@ function footer() {
           <li><a href="#" class="hover:text-orange-600">Help Center</a></li>
           <li><a href="#" class="hover:text-orange-600">Buyer Protection</a></li>
           <li><a href="#" class="hover:text-orange-600">Track Order</a></li>
-          <li><a href="#" class="hover:text-orange-600">Returns & Refunds</a></li>
         </ul>
       </div>
       <div>
         <h4 class="font-bold mb-3">Business Suites</h4>
         <ul class="space-y-2 text-gray-600">
-          ${state.platforms.slice(0,4).map(p => `<li><a href="#/${p.slug}" class="hover:text-orange-600">${p.name}</a></li>`).join("")}
+          ${state.platforms.slice(0,4).map(p => `<li><a href="#/${p.slug}" class="hover:text-orange-600">${esc(p.name)}</a></li>`).join("")}
         </ul>
       </div>
       <div>
         <h4 class="font-bold mb-3">Sell With Us</h4>
         <ul class="space-y-2 text-gray-600">
           <li><a href="#" class="hover:text-orange-600">Become a Seller</a></li>
-          <li><a href="#" class="hover:text-orange-600">Merchant Dashboard</a></li>
           <li><a href="#" class="hover:text-orange-600">Affiliate Program</a></li>
         </ul>
       </div>
       <div>
         <h4 class="font-bold mb-3">Stay Updated</h4>
-        <p class="text-gray-600 mb-3">Get $50 welcome vouchers.</p>
         <input type="email" placeholder="Your email..." class="w-full border border-gray-300 rounded-lg px-4 py-2 mb-2"/>
         <button class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 rounded-lg">Subscribe</button>
       </div>
     </div>
     <div class="border-t border-gray-200 py-5 text-center text-xs text-gray-500">
-      © 2026 oraXpress Inc. All rights reserved. • Global Buyer Protection • 30-Day Return Guarantee
+      © 2026 oraXpress Inc. All rights reserved.
     </div>
   </footer>`;
 }
 
-/* =======================  HOME PAGE  ======================= */
+/* =======================  HOME  ======================= */
 function renderHome() {
   return `
   ${header()}
-
-  <!-- HERO -->
   <section class="relative bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white overflow-hidden">
     <div class="max-w-7xl mx-auto px-4 py-16 md:py-24 grid md:grid-cols-2 gap-10 items-center">
       <div class="fade-in">
@@ -188,16 +269,13 @@ function renderHome() {
         <h1 class="text-4xl md:text-6xl font-extrabold leading-tight mb-5">
           Up to <span class="text-orange-400">75% Off</span><br/>Global Tech & Gadgets
         </h1>
-        <p class="text-gray-300 mb-8 text-lg">Free Worldwide Shipping on Choice items over $15 with 7-day guarantee delivery.</p>
+        <p class="text-gray-300 mb-8 text-lg">Free Worldwide Shipping on Choice items over $15.</p>
         <a href="#/e-commerce" class="inline-block bg-orange-500 hover:bg-orange-600 text-white font-bold px-8 py-4 rounded-full text-lg shadow-lg shadow-orange-500/30">Shop Tech Deals →</a>
       </div>
-      <div class="text-center">
-        <div class="text-[10rem] md:text-[14rem] drop-shadow-2xl">🎧</div>
-      </div>
+      <div class="text-center"><div class="text-[10rem] md:text-[14rem]">🎧</div></div>
     </div>
   </section>
 
-  <!-- AUTH STRIP -->
   <section class="max-w-7xl mx-auto px-4 -mt-8 relative z-10">
     <div class="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
       <div class="flex flex-col md:flex-row items-center justify-between gap-4">
@@ -216,7 +294,6 @@ function renderHome() {
     </div>
   </section>
 
-  <!-- VOUCHERS -->
   <section class="max-w-7xl mx-auto px-4 mt-10">
     <div class="flex items-center justify-between mb-4">
       <h3 class="text-lg font-bold">🎟️ Exclusive Vouchers</h3>
@@ -240,76 +317,73 @@ function renderHome() {
     </div>
   </section>
 
-  <!-- CATEGORIES -->
   <section class="max-w-7xl mx-auto px-4 mt-14">
     <div class="flex items-center justify-between mb-5">
       <h2 class="text-2xl font-bold">🛍️ Popular Categories</h2>
-      <span class="text-sm text-gray-500">Over 100M+ global listings</span>
+      <span class="text-sm text-gray-500">${state.categories.length} categories</span>
     </div>
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-      ${state.categories.map(c => `
-        <a href="#/e-commerce" class="bg-white border border-gray-200 rounded-2xl p-5 text-center hover:shadow-lg hover:border-orange-300 transition">
-          <div class="text-4xl mb-3">${c.icon}</div>
-          <div class="font-semibold text-gray-800 text-sm">${c.name}</div>
-        </a>
-      `).join("")}
-    </div>
+    ${state.categories.length === 0
+      ? `<div class="bg-white border border-dashed rounded-2xl p-10 text-center text-gray-500">
+           No categories yet. Go to <a href="#/admin" class="text-orange-600 font-semibold">Admin</a> to add.
+         </div>`
+      : `<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          ${state.categories.map(c => `
+            <a href="#/e-commerce" class="bg-white border border-gray-200 rounded-2xl p-5 text-center hover:shadow-lg hover:border-orange-300 transition">
+              <div class="text-4xl mb-3">${esc(c.icon || "📦")}</div>
+              <div class="font-semibold text-gray-800 text-sm">${esc(c.name)}</div>
+            </a>
+          `).join("")}
+        </div>`}
   </section>
 
-  <!-- PRODUCTS -->
   <section class="max-w-7xl mx-auto px-4 mt-14">
     <div class="flex items-center justify-between mb-5">
       <h2 class="text-2xl font-bold">🔥 Trending Now</h2>
-      <a href="#/e-commerce" class="text-orange-600 font-semibold text-sm">View All →</a>
     </div>
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
       ${state.products.map(p => `
-        <div class="bg-white border border-gray-200 rounded-2xl overflow-hidden hover:shadow-xl transition group">
+        <div class="bg-white border border-gray-200 rounded-2xl overflow-hidden hover:shadow-xl transition">
           <div class="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 grid place-items-center text-7xl">
             ${p.img}
             <span class="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded">-${Math.round((1 - p.price/p.old)*100)}%</span>
             <span class="absolute bottom-2 left-2 bg-gray-900/80 text-white text-[10px] font-semibold px-2 py-1 rounded-full">🔥 ${p.tag}</span>
           </div>
           <div class="p-3">
-            <div class="text-sm text-gray-800 line-clamp-2 h-10 mb-2">${p.name}</div>
+            <div class="text-sm text-gray-800 line-clamp-2 h-10 mb-2">${esc(p.name)}</div>
             <div class="flex items-baseline gap-2">
               <span class="text-lg font-bold text-orange-600">$${p.price}</span>
               <span class="text-xs text-gray-400 line-through">$${p.old}</span>
             </div>
-            <div class="mt-2 h-1 bg-gray-100 rounded-full overflow-hidden">
-              <div class="h-full bg-orange-500" style="width:${p.claimed}%"></div>
-            </div>
-            <div class="text-[11px] text-gray-500 mt-1">${p.claimed}% claimed</div>
           </div>
         </div>
       `).join("")}
     </div>
   </section>
 
-  <!-- SAAS PLATFORMS -->
   <section class="max-w-7xl mx-auto px-4 mt-20 mb-16">
     <div class="bg-gradient-to-br from-gray-900 to-gray-800 rounded-3xl p-8 md:p-12 text-white">
       <div class="text-center mb-10">
         <span class="bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full">SAAS PLATFORMS</span>
         <h2 class="text-3xl md:text-4xl font-extrabold mt-4">oraXpress Business Solutions</h2>
-        <p class="text-gray-300 mt-3 max-w-2xl mx-auto">Empower retail stores, restaurants & schools with our cloud POS & ERP apps.</p>
+        <p class="text-gray-300 mt-3">Cloud POS & ERP apps for every business.</p>
       </div>
-      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-        ${state.platforms.map(p => `
-          <a href="#/${p.slug}" class="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 hover:border-orange-400/50 transition group">
-            <div class="w-14 h-14 rounded-xl bg-gradient-to-br ${p.color} grid place-items-center text-3xl mb-4">${p.icon}</div>
-            <h3 class="text-xl font-bold mb-1">${p.name}</h3>
-            <p class="text-sm text-gray-300 mb-3">${p.desc}</p>
-            <div class="flex items-center justify-between">
-              <span class="text-xs bg-emerald-500/20 text-emerald-300 font-bold px-2 py-1 rounded">${p.status}</span>
-              <span class="text-orange-400 font-semibold text-sm group-hover:translate-x-1 transition">Explore →</span>
-            </div>
-          </a>
-        `).join("")}
-      </div>
+      ${state.platforms.length === 0
+        ? `<div class="text-center py-10 text-gray-400">No platforms yet. Add from Admin.</div>`
+        : `<div class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+          ${state.platforms.map(p => `
+            <a href="#/${esc(p.slug)}" class="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 hover:border-orange-400/50 transition group">
+              <div class="w-14 h-14 rounded-xl bg-gradient-to-br ${p.color || 'from-orange-500 to-red-500'} grid place-items-center text-3xl mb-4">${esc(p.icon || "🧩")}</div>
+              <h3 class="text-xl font-bold mb-1">${esc(p.name)}</h3>
+              <p class="text-sm text-gray-300 mb-3">${esc(p.desc || "")}</p>
+              <div class="flex items-center justify-between">
+                <span class="text-xs bg-emerald-500/20 text-emerald-300 font-bold px-2 py-1 rounded">${esc(p.status || "LIVE")}</span>
+                <span class="text-orange-400 font-semibold text-sm group-hover:translate-x-1 transition">Explore →</span>
+              </div>
+            </a>
+          `).join("")}
+        </div>`}
     </div>
   </section>
-
   ${footer()}`;
 }
 
@@ -317,34 +391,32 @@ function renderHome() {
 function renderPlatformPage(p) {
   return `
   ${header()}
-  <section class="bg-gradient-to-br ${p.color} text-white">
+  <section class="bg-gradient-to-br ${p.color || 'from-orange-500 to-red-500'} text-white">
     <div class="max-w-7xl mx-auto px-4 py-16 fade-in">
-      <div class="w-20 h-20 rounded-2xl bg-white/20 backdrop-blur grid place-items-center text-5xl mb-5">${p.icon}</div>
-      <span class="bg-white/20 text-xs font-bold px-3 py-1 rounded-full">${p.category}</span>
-      <h1 class="text-4xl md:text-5xl font-extrabold mt-4 mb-3">${p.name}</h1>
-      <p class="text-lg opacity-90 max-w-2xl">${p.desc}</p>
+      <div class="w-20 h-20 rounded-2xl bg-white/20 backdrop-blur grid place-items-center text-5xl mb-5">${esc(p.icon || "🧩")}</div>
+      <span class="bg-white/20 text-xs font-bold px-3 py-1 rounded-full">${esc(p.categoryName || p.categoryId || "Platform")}</span>
+      <h1 class="text-4xl md:text-5xl font-extrabold mt-4 mb-3">${esc(p.name)}</h1>
+      <p class="text-lg opacity-90 max-w-2xl">${esc(p.desc || "")}</p>
       <div class="mt-6 flex gap-3 flex-wrap">
-        <button class="bg-white text-gray-900 font-bold px-6 py-3 rounded-full hover:bg-gray-100">Start 14-Day Free Trial</button>
-        <button class="bg-white/20 border border-white/30 font-bold px-6 py-3 rounded-full hover:bg-white/30">Try Demo</button>
+        <button class="bg-white text-gray-900 font-bold px-6 py-3 rounded-full">Start Free Trial</button>
+        <button class="bg-white/20 border border-white/30 font-bold px-6 py-3 rounded-full">Try Demo</button>
       </div>
     </div>
   </section>
   <section class="max-w-7xl mx-auto px-4 py-16">
     <div class="grid md:grid-cols-3 gap-6">
-      <div class="bg-white border rounded-2xl p-6"><div class="text-3xl mb-2">⚡</div><h3 class="font-bold text-lg mb-1">Fast Setup</h3><p class="text-gray-600 text-sm">Get up and running in minutes.</p></div>
-      <div class="bg-white border rounded-2xl p-6"><div class="text-3xl mb-2">🔒</div><h3 class="font-bold text-lg mb-1">Secure & Reliable</h3><p class="text-gray-600 text-sm">256-bit encryption, 99.9% uptime.</p></div>
-      <div class="bg-white border rounded-2xl p-6"><div class="text-3xl mb-2">🌍</div><h3 class="font-bold text-lg mb-1">Global Ready</h3><p class="text-gray-600 text-sm">Multi-currency, multi-language.</p></div>
+      <div class="bg-white border rounded-2xl p-6"><div class="text-3xl mb-2">⚡</div><h3 class="font-bold text-lg mb-1">Fast Setup</h3><p class="text-gray-600 text-sm">Get running in minutes.</p></div>
+      <div class="bg-white border rounded-2xl p-6"><div class="text-3xl mb-2">🔒</div><h3 class="font-bold text-lg mb-1">Secure</h3><p class="text-gray-600 text-sm">256-bit encryption.</p></div>
+      <div class="bg-white border rounded-2xl p-6"><div class="text-3xl mb-2">🌍</div><h3 class="font-bold text-lg mb-1">Global Ready</h3><p class="text-gray-600 text-sm">Multi-currency support.</p></div>
     </div>
-    <div class="mt-10 text-center">
-      <a href="#/" class="text-orange-600 font-semibold">← Back to Home</a>
-    </div>
+    <div class="mt-10 text-center"><a href="#/" class="text-orange-600 font-semibold">← Back to Home</a></div>
   </section>
   ${footer()}`;
 }
 
 /* =======================  ADMIN  ======================= */
 function renderAdmin() {
-  if (!state.user) {
+  if (!state.user && !state.demoMode) {
     return `${header()}<div class="max-w-xl mx-auto py-24 text-center">
       <h1 class="text-2xl font-bold mb-4">Admin Login Required</h1>
       <button data-action="open-auth" class="bg-orange-500 text-white font-bold px-6 py-3 rounded-full">Sign In</button>
@@ -353,18 +425,21 @@ function renderAdmin() {
 
   const stats = [
     { label: "Total Platforms", value: state.platforms.length, icon: "🧩", color: "from-blue-500 to-indigo-500" },
-    { label: "Live Platforms", value: state.platforms.filter(p=>p.status==="LIVE").length, icon: "🟢", color: "from-emerald-500 to-teal-500" },
-    { label: "Categories", value: state.categories.length, icon: "📂", color: "from-purple-500 to-pink-500" },
-    { label: "Total Users", value: state.user ? 1 : 0, icon: "👥", color: "from-orange-500 to-red-500" }
+    { label: "Live Platforms",  value: state.platforms.filter(p=>p.status==="LIVE").length, icon: "🟢", color: "from-emerald-500 to-teal-500" },
+    { label: "Categories",      value: state.categories.length, icon: "📂", color: "from-purple-500 to-pink-500" },
+    { label: "Demo Mode",       value: state.demoMode ? "ON" : "OFF", icon: "⚙️", color: "from-orange-500 to-red-500" }
   ];
 
   return `
   ${header()}
   <div class="max-w-7xl mx-auto px-4 py-8">
-    <h1 class="text-3xl font-bold mb-6">Super Admin Dashboard</h1>
+    <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
+      <h1 class="text-3xl font-bold">Super Admin Dashboard</h1>
+      <div class="text-sm text-gray-500">${state.user ? esc(state.user.email || "") : "Demo Mode"}</div>
+    </div>
 
     ${state.demoMode ? `<div class="bg-yellow-50 border border-yellow-300 text-yellow-800 p-4 rounded-xl mb-6 text-sm">
-      ⚠️ Firebase configure করা হয়নি। এখন Demo Mode-এ চলছে। README দেখুন।
+      ⚠️ Demo Mode চলছে। এখানে যা যোগ/এডিট করবেন সব আপনার ব্রাউজারে (localStorage-এ) সেভ হবে। Firebase বসালে ক্লাউডে সেভ হবে।
     </div>` : ""}
 
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -377,39 +452,399 @@ function renderAdmin() {
       `).join("")}
     </div>
 
-    <div class="grid md:grid-cols-2 gap-6">
-      <div class="bg-white border rounded-2xl p-6">
-        <h2 class="font-bold text-lg mb-4">🧩 Platforms</h2>
-        <div class="space-y-2 max-h-80 overflow-y-auto">
-          ${state.platforms.map(p => `
-            <div class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 border border-gray-100">
-              <div class="flex items-center gap-3">
-                <span class="text-2xl">${p.icon}</span>
-                <div><div class="font-semibold text-sm">${p.name}</div><div class="text-xs text-gray-500">/${p.slug}</div></div>
-              </div>
-              <span class="text-xs bg-emerald-100 text-emerald-700 font-bold px-2 py-1 rounded">${p.status}</span>
-            </div>
-          `).join("")}
-        </div>
-      </div>
-      <div class="bg-white border rounded-2xl p-6">
-        <h2 class="font-bold text-lg mb-4">📂 Categories</h2>
-        <div class="grid grid-cols-2 gap-2">
-          ${state.categories.map(c => `
-            <div class="p-3 rounded-lg bg-gray-50 border border-gray-100 text-sm">
-              <span class="text-xl mr-2">${c.icon}</span>${c.name}
-            </div>
-          `).join("")}
-        </div>
-      </div>
+    <!-- TABS -->
+    <div class="flex gap-2 mb-6 border-b border-gray-200 overflow-x-auto">
+      <button data-tab="platforms" class="admin-tab px-4 py-3 font-semibold text-sm border-b-2 border-orange-500 text-orange-600 whitespace-nowrap">🧩 Platforms</button>
+      <button data-tab="categories" class="admin-tab px-4 py-3 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-800 whitespace-nowrap">📂 Categories</button>
+      <button data-tab="audit" class="admin-tab px-4 py-3 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-800 whitespace-nowrap">📝 Audit Log</button>
     </div>
 
-    <div class="bg-white border rounded-2xl p-6 mt-6">
-      <h2 class="font-bold text-lg mb-2">📝 Audit Log</h2>
-      <p class="text-sm text-gray-500">Firebase connect করলে এখানে সব action-এর লগ দেখাবে।</p>
+    <div id="adminTabContent">
+      ${adminTabPlatforms()}
     </div>
   </div>
   ${footer()}`;
+}
+
+function adminTabPlatforms() {
+  return `
+  <div class="bg-white border rounded-2xl p-6">
+    <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+      <h2 class="font-bold text-xl">All Platforms</h2>
+      <button data-action="new-platform" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-5 py-2.5 rounded-lg text-sm">+ New Platform</button>
+    </div>
+    ${state.platforms.length === 0
+      ? `<div class="text-center py-16 text-gray-500">
+           <div class="text-5xl mb-3">📦</div>
+           <p>No platforms yet. Click "New Platform" to add one.</p>
+         </div>`
+      : `<div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-left text-gray-600">
+              <tr>
+                <th class="p-3 font-semibold">Icon</th>
+                <th class="p-3 font-semibold">Name</th>
+                <th class="p-3 font-semibold">Slug</th>
+                <th class="p-3 font-semibold">Category</th>
+                <th class="p-3 font-semibold">Status</th>
+                <th class="p-3 font-semibold text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${state.platforms.map(p => `
+                <tr class="border-t border-gray-100 hover:bg-gray-50">
+                  <td class="p-3 text-2xl">${esc(p.icon || "🧩")}</td>
+                  <td class="p-3 font-semibold">${esc(p.name)}</td>
+                  <td class="p-3 text-gray-500 font-mono text-xs">/${esc(p.slug)}</td>
+                  <td class="p-3">${esc(p.categoryName || p.categoryId || "—")}</td>
+                  <td class="p-3">
+                    <span class="text-xs font-bold px-2 py-1 rounded
+                      ${p.status === 'LIVE' ? 'bg-emerald-100 text-emerald-700'
+                        : p.status === 'SUSPENDED' ? 'bg-red-100 text-red-700'
+                        : 'bg-yellow-100 text-yellow-700'}">${esc(p.status || 'LIVE')}</span>
+                  </td>
+                  <td class="p-3 text-right whitespace-nowrap">
+                    <a href="#/${esc(p.slug)}" class="text-blue-600 hover:underline text-xs font-semibold mr-3">View</a>
+                    <button data-action="edit-platform" data-id="${p.id}" class="text-orange-600 hover:underline text-xs font-semibold mr-3">Edit</button>
+                    <button data-action="delete-platform" data-id="${p.id}" class="text-red-600 hover:underline text-xs font-semibold">Delete</button>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>`}
+  </div>`;
+}
+
+function adminTabCategories() {
+  return `
+  <div class="bg-white border rounded-2xl p-6">
+    <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+      <h2 class="font-bold text-xl">All Categories</h2>
+      <button data-action="new-category" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-5 py-2.5 rounded-lg text-sm">+ New Category</button>
+    </div>
+    ${state.categories.length === 0
+      ? `<div class="text-center py-16 text-gray-500">
+           <div class="text-5xl mb-3">📂</div>
+           <p>No categories yet.</p>
+         </div>`
+      : `<div class="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+          ${state.categories.map(c => `
+            <div class="border border-gray-200 rounded-xl p-4 flex items-center justify-between hover:shadow-md transition">
+              <div class="flex items-center gap-3">
+                <span class="text-3xl">${esc(c.icon || "📦")}</span>
+                <div>
+                  <div class="font-semibold text-sm">${esc(c.name)}</div>
+                  <div class="text-xs text-gray-500">Order: ${esc(c.order ?? "—")}</div>
+                </div>
+              </div>
+              <div class="flex gap-2">
+                <button data-action="edit-category" data-id="${c.id}" class="text-orange-600 hover:bg-orange-50 rounded-lg px-2 py-1 text-xs font-semibold">Edit</button>
+                <button data-action="delete-category" data-id="${c.id}" class="text-red-600 hover:bg-red-50 rounded-lg px-2 py-1 text-xs font-semibold">Del</button>
+              </div>
+            </div>
+          `).join("")}
+        </div>`}
+  </div>`;
+}
+
+function adminTabAudit() {
+  return `
+  <div class="bg-white border rounded-2xl p-6">
+    <h2 class="font-bold text-xl mb-4">📝 Audit Log</h2>
+    <p class="text-sm text-gray-500 mb-4">
+      এই মুহূর্তে Demo Mode-এ audit log দেখানো হচ্ছে না। Firebase যোগ করার পরে এখানে সব action-এর লগ দেখাবে (কে কোন প্ল্যাটফর্ম কখন তৈরি/এডিট/ডিলিট করেছে)।
+    </p>
+    <div class="bg-gray-50 border rounded-lg p-6 text-center text-gray-400 text-sm">
+      No logs available yet.
+    </div>
+  </div>`;
+}
+
+/* =======================  MODALS  ======================= */
+function openPlatformModal(platform = null) {
+  const editing = !!platform;
+  const p = platform || { name: "", slug: "", desc: "", icon: "🧩", color: "from-orange-500 to-red-500", status: "LIVE", type: "PUBLIC_PRODUCT", categoryId: "" };
+  const categoryOptions = state.categories.map(c => `<option value="${c.id}" ${p.categoryId === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("");
+  const colorOptions = [
+    "from-orange-500 to-red-500", "from-blue-600 to-indigo-600", "from-emerald-500 to-teal-600",
+    "from-purple-600 to-violet-600", "from-pink-500 to-rose-600", "from-cyan-500 to-blue-600",
+    "from-yellow-500 to-orange-600", "from-gray-700 to-gray-900"
+  ];
+
+  const html = `
+  <div id="modalWrap" class="fixed inset-0 modal-bg z-[100] grid place-items-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl w-full max-w-2xl p-6 md:p-8 relative my-8 fade-in">
+      <button data-close class="absolute top-4 right-4 text-gray-400 text-2xl leading-none hover:text-gray-800">×</button>
+      <h2 class="text-2xl font-bold mb-1">${editing ? "Edit Platform" : "New Platform"}</h2>
+      <p class="text-sm text-gray-500 mb-6">${editing ? "Update the platform details below." : "Add a new platform to oraXpress."}</p>
+
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="md:col-span-2">
+          <label class="block text-sm font-semibold mb-1">Platform Name *</label>
+          <input id="f-name" value="${esc(p.name)}" placeholder="e.g. Hisab AI" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500"/>
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold mb-1">Slug (URL) *</label>
+          <input id="f-slug" value="${esc(p.slug)}" placeholder="e.g. hisabai" class="w-full border rounded-lg px-4 py-2.5 font-mono text-sm focus:outline-none focus:border-orange-500"/>
+          <p class="text-[11px] text-gray-500 mt-1">URL হবে: yoursite.com/#/<b id="slugPreview">${esc(p.slug || "slug")}</b></p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold mb-1">Category</label>
+          <select id="f-categoryId" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500">
+            <option value="">— Select —</option>
+            ${categoryOptions}
+          </select>
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="block text-sm font-semibold mb-1">Description</label>
+          <textarea id="f-desc" rows="3" placeholder="Short description..." class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500">${esc(p.desc || "")}</textarea>
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold mb-1">Icon (emoji)</label>
+          <input id="f-icon" value="${esc(p.icon || "🧩")}" class="w-full border rounded-lg px-4 py-2.5 text-2xl focus:outline-none focus:border-orange-500" maxlength="4"/>
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold mb-1">Status</label>
+          <select id="f-status" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500">
+            <option value="LIVE" ${p.status === "LIVE" ? "selected" : ""}>LIVE</option>
+            <option value="DRAFT" ${p.status === "DRAFT" ? "selected" : ""}>DRAFT</option>
+            <option value="TESTING" ${p.status === "TESTING" ? "selected" : ""}>TESTING</option>
+            <option value="SUSPENDED" ${p.status === "SUSPENDED" ? "selected" : ""}>SUSPENDED</option>
+            <option value="ARCHIVED" ${p.status === "ARCHIVED" ? "selected" : ""}>ARCHIVED</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold mb-1">Type</label>
+          <select id="f-type" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500">
+            <option value="PUBLIC_PRODUCT" ${p.type === "PUBLIC_PRODUCT" ? "selected" : ""}>PUBLIC_PRODUCT</option>
+            <option value="PRIVATE_CUSTOM" ${p.type === "PRIVATE_CUSTOM" ? "selected" : ""}>PRIVATE_CUSTOM</option>
+          </select>
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="block text-sm font-semibold mb-1">Color Theme</label>
+          <div class="flex flex-wrap gap-2">
+            ${colorOptions.map(c => `
+              <button type="button" data-color="${c}" class="color-choice w-12 h-12 rounded-xl bg-gradient-to-br ${c} border-4 ${p.color === c ? 'border-orange-400' : 'border-transparent'}"></button>
+            `).join("")}
+          </div>
+          <input type="hidden" id="f-color" value="${esc(p.color || colorOptions[0])}"/>
+        </div>
+      </div>
+
+      <div id="formMsg" class="text-sm mt-4"></div>
+
+      <div class="flex justify-end gap-3 mt-6 pt-5 border-t">
+        <button data-close class="px-5 py-2.5 rounded-lg border font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+        <button id="savePlatformBtn" class="px-5 py-2.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white font-bold">
+          ${editing ? "Save Changes" : "Create Platform"}
+        </button>
+      </div>
+    </div>
+  </div>`;
+
+  document.body.insertAdjacentHTML("beforeend", html);
+  const wrap = document.getElementById("modalWrap");
+
+  // Slug auto-preview
+  const slugInput = wrap.querySelector("#f-slug");
+  const nameInput = wrap.querySelector("#f-name");
+  const slugPrev  = wrap.querySelector("#slugPreview");
+  nameInput.addEventListener("input", () => {
+    if (!editing && !slugInput.value) slugInput.value = slugify(nameInput.value);
+    slugPrev.textContent = slugInput.value || "slug";
+  });
+  slugInput.addEventListener("input", () => { slugPrev.textContent = slugInput.value || "slug"; });
+
+  // Color pick
+  wrap.querySelectorAll(".color-choice").forEach(btn => {
+    btn.addEventListener("click", () => {
+      wrap.querySelectorAll(".color-choice").forEach(b => b.classList.remove("border-orange-400"));
+      btn.classList.add("border-orange-400");
+      wrap.querySelector("#f-color").value = btn.dataset.color;
+    });
+  });
+
+  // Close
+  wrap.querySelectorAll("[data-close]").forEach(b => b.onclick = () => wrap.remove());
+
+  // Save
+  wrap.querySelector("#savePlatformBtn").onclick = async () => {
+    const name = wrap.querySelector("#f-name").value.trim();
+    const slug = wrap.querySelector("#f-slug").value.trim() || slugify(name);
+    const desc = wrap.querySelector("#f-desc").value.trim();
+    const icon = wrap.querySelector("#f-icon").value.trim() || "🧩";
+    const status = wrap.querySelector("#f-status").value;
+    const type = wrap.querySelector("#f-type").value;
+    const color = wrap.querySelector("#f-color").value;
+    const categoryId = wrap.querySelector("#f-categoryId").value;
+    const categoryName = state.categories.find(c => c.id === categoryId)?.name || "";
+
+    const msg = wrap.querySelector("#formMsg");
+    if (!name) { msg.className = "text-sm mt-4 text-red-600"; msg.textContent = "Name is required."; return; }
+    if (!slug) { msg.className = "text-sm mt-4 text-red-600"; msg.textContent = "Slug is required."; return; }
+    // unique slug
+    if (state.platforms.some(x => x.slug === slug && x.id !== p.id)) {
+      msg.className = "text-sm mt-4 text-red-600"; msg.textContent = "This slug is already used."; return;
+    }
+
+    const data = { name, slug, desc, icon, status, type, color, categoryId, categoryName };
+
+    try {
+      wrap.querySelector("#savePlatformBtn").disabled = true;
+      wrap.querySelector("#savePlatformBtn").textContent = "Saving...";
+      if (editing) await updatePlatform(p.id, data);
+      else await createPlatform(data);
+
+      await reloadData();
+      wrap.remove();
+      render();
+      toast("✅ Platform saved successfully");
+    } catch (e) {
+      msg.className = "text-sm mt-4 text-red-600";
+      msg.textContent = "Error: " + e.message;
+      wrap.querySelector("#savePlatformBtn").disabled = false;
+      wrap.querySelector("#savePlatformBtn").textContent = "Save";
+    }
+  };
+}
+
+function openCategoryModal(cat = null) {
+  const editing = !!cat;
+  const c = cat || { name: "", icon: "📦", order: state.categories.length + 1 };
+
+  const html = `
+  <div id="modalWrap" class="fixed inset-0 modal-bg z-[100] grid place-items-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl w-full max-w-md p-6 md:p-8 relative fade-in">
+      <button data-close class="absolute top-4 right-4 text-gray-400 text-2xl leading-none hover:text-gray-800">×</button>
+      <h2 class="text-2xl font-bold mb-1">${editing ? "Edit Category" : "New Category"}</h2>
+      <p class="text-sm text-gray-500 mb-6">${editing ? "Update category details." : "Add a new product category."}</p>
+
+      <label class="block text-sm font-semibold mb-1">Name *</label>
+      <input id="c-name" value="${esc(c.name)}" placeholder="e.g. Electronics" class="w-full border rounded-lg px-4 py-2.5 mb-4 focus:outline-none focus:border-orange-500"/>
+
+      <label class="block text-sm font-semibold mb-1">Icon (emoji)</label>
+      <input id="c-icon" value="${esc(c.icon || "📦")}" maxlength="4" class="w-full border rounded-lg px-4 py-2.5 text-2xl mb-4 focus:outline-none focus:border-orange-500"/>
+
+      <label class="block text-sm font-semibold mb-1">Order (0–999)</label>
+      <input id="c-order" type="number" value="${esc(c.order ?? 0)}" class="w-full border rounded-lg px-4 py-2.5 mb-4 focus:outline-none focus:border-orange-500"/>
+
+      <div id="formMsg" class="text-sm"></div>
+
+      <div class="flex justify-end gap-3 mt-6 pt-5 border-t">
+        <button data-close class="px-5 py-2.5 rounded-lg border font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+        <button id="saveCatBtn" class="px-5 py-2.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white font-bold">
+          ${editing ? "Save Changes" : "Create Category"}
+        </button>
+      </div>
+    </div>
+  </div>`;
+
+  document.body.insertAdjacentHTML("beforeend", html);
+  const wrap = document.getElementById("modalWrap");
+  wrap.querySelectorAll("[data-close]").forEach(b => b.onclick = () => wrap.remove());
+
+  wrap.querySelector("#saveCatBtn").onclick = async () => {
+    const name = wrap.querySelector("#c-name").value.trim();
+    const icon = wrap.querySelector("#c-icon").value.trim() || "📦";
+    const order = parseInt(wrap.querySelector("#c-order").value) || 0;
+    const msg = wrap.querySelector("#formMsg");
+
+    if (!name) { msg.className = "text-sm text-red-600"; msg.textContent = "Name is required."; return; }
+
+    try {
+      if (editing) await updateCategory(c.id, { name, icon, order });
+      else await createCategory({ name, icon, order });
+
+      await reloadData();
+      wrap.remove();
+      render();
+      toast("✅ Category saved");
+    } catch (e) {
+      msg.className = "text-sm text-red-600";
+      msg.textContent = "Error: " + e.message;
+    }
+  };
+}
+
+function confirmDelete(message, onConfirm) {
+  const html = `
+  <div id="confirmWrap" class="fixed inset-0 modal-bg z-[100] grid place-items-center p-4">
+    <div class="bg-white rounded-2xl w-full max-w-md p-6 relative fade-in">
+      <div class="text-5xl mb-3 text-center">⚠️</div>
+      <h2 class="text-xl font-bold mb-2 text-center">Are you sure?</h2>
+      <p class="text-gray-600 text-sm text-center mb-6">${esc(message)}</p>
+      <div class="flex gap-3">
+        <button data-close class="flex-1 px-5 py-3 rounded-lg border font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+        <button id="confirmYes" class="flex-1 px-5 py-3 rounded-lg bg-red-500 hover:bg-red-600 text-white font-bold">Yes, Delete</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML("beforeend", html);
+  const wrap = document.getElementById("confirmWrap");
+  wrap.querySelector("[data-close]").onclick = () => wrap.remove();
+  wrap.querySelector("#confirmYes").onclick = async () => {
+    wrap.remove();
+    await onConfirm();
+  };
+}
+
+/* =======================  TOAST  ======================= */
+function toast(msg) {
+  const t = document.createElement("div");
+  t.className = "fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-lg z-[200] fade-in text-sm font-semibold";
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2500);
+}
+
+/* =======================  AUTH MODAL  ======================= */
+function openAuth(mode = "login") {
+  const existing = document.getElementById("authModal");
+  if (existing) existing.remove();
+  const html = `
+  <div id="authModal" class="fixed inset-0 modal-bg z-[100] grid place-items-center p-4">
+    <div class="bg-white rounded-2xl w-full max-w-md p-8 relative fade-in">
+      <button data-close class="absolute top-4 right-4 text-gray-400 text-2xl">×</button>
+      <h2 class="text-2xl font-bold mb-1">${mode === "login" ? "Welcome Back" : "Create Account"}</h2>
+      <p class="text-sm text-gray-500 mb-6">Sign in to oraXpress</p>
+      <input id="authEmail" type="email" placeholder="Email" class="w-full border rounded-lg px-4 py-3 mb-3 focus:outline-none focus:border-orange-500"/>
+      <input id="authPass" type="password" placeholder="Password (6+ chars)" class="w-full border rounded-lg px-4 py-3 mb-4 focus:outline-none focus:border-orange-500"/>
+      <button id="authSubmit" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-lg">
+        ${mode === "login" ? "Sign In" : "Register"}
+      </button>
+      <div id="authMsg" class="text-sm mt-3 text-center"></div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML("beforeend", html);
+  const wrap = document.getElementById("authModal");
+  wrap.querySelector("[data-close]").onclick = () => wrap.remove();
+  wrap.querySelector("#authSubmit").onclick = async () => {
+    const email = wrap.querySelector("#authEmail").value.trim();
+    const pass = wrap.querySelector("#authPass").value;
+    const msg = wrap.querySelector("#authMsg");
+    if (state.demoMode) {
+      msg.className = "text-sm mt-3 text-center text-orange-600";
+      msg.textContent = "Demo Mode: Firebase configure করলে login কাজ করবে।";
+      return;
+    }
+    try {
+      if (mode === "login") await signInWithEmailAndPassword(auth, email, pass);
+      else await createUserWithEmailAndPassword(auth, email, pass);
+      wrap.remove();
+      toast("✅ Signed in");
+    } catch (e) {
+      msg.className = "text-sm mt-3 text-center text-red-500";
+      msg.textContent = e.message;
+    }
+  };
 }
 
 /* =======================  ROUTER  ======================= */
@@ -426,60 +861,82 @@ function render() {
   root.innerHTML = renderHome();
 }
 
-/* =======================  AUTH MODAL  ======================= */
-function openAuth(mode = "login") {
-  const existing = document.getElementById("authModal");
-  if (existing) existing.remove();
-
-  const modal = document.createElement("div");
-  modal.id = "authModal";
-  modal.className = "fixed inset-0 bg-black/60 z-[100] grid place-items-center p-4";
-  modal.innerHTML = `
-    <div class="bg-white rounded-2xl w-full max-w-md p-8 relative">
-      <button data-close class="absolute top-4 right-4 text-gray-400 text-2xl leading-none">×</button>
-      <h2 class="text-2xl font-bold mb-1">${mode === "login" ? "Welcome Back" : "Create Account"}</h2>
-      <p class="text-sm text-gray-500 mb-6">Sign in to oraXpress</p>
-      <input id="authEmail" type="email" placeholder="Email" class="w-full border rounded-lg px-4 py-3 mb-3 focus:outline-none focus:border-orange-500"/>
-      <input id="authPass" type="password" placeholder="Password" class="w-full border rounded-lg px-4 py-3 mb-4 focus:outline-none focus:border-orange-500"/>
-      <button id="authSubmit" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-lg">
-        ${mode === "login" ? "Sign In" : "Register"}
-      </button>
-      <div id="authMsg" class="text-sm mt-3 text-center"></div>
-    </div>`;
-  document.body.appendChild(modal);
-
-  modal.querySelector("[data-close]").onclick = () => modal.remove();
-  modal.querySelector("#authSubmit").onclick = async () => {
-    const email = modal.querySelector("#authEmail").value;
-    const pass = modal.querySelector("#authPass").value;
-    const msg = modal.querySelector("#authMsg");
-
-    if (state.demoMode) {
-      msg.className = "text-sm mt-3 text-center text-orange-600";
-      msg.textContent = "Demo Mode: Firebase configure করুন (README দেখুন)।";
+/* =======================  GLOBAL EVENTS  ======================= */
+document.addEventListener("click", async (e) => {
+  const t = e.target.closest("[data-action]");
+  if (t) {
+    const a = t.dataset.action;
+    if (a === "open-auth") return openAuth("login");
+    if (a === "open-auth-register") return openAuth("register");
+    if (a === "logout") { if (auth) await signOut(auth); return; }
+    if (a === "go-admin") { location.hash = "/admin"; return; }
+    if (a === "new-platform") return openPlatformModal();
+    if (a === "edit-platform") {
+      const p = state.platforms.find(x => x.id === t.dataset.id);
+      if (p) openPlatformModal(p);
       return;
     }
-    try {
-      if (mode === "login") await signInWithEmailAndPassword(auth, email, pass);
-      else await createUserWithEmailAndPassword(auth, email, pass);
-      modal.remove();
-    } catch (e) {
-      msg.className = "text-sm mt-3 text-center text-red-500";
-      msg.textContent = e.message;
+    if (a === "delete-platform") {
+      const p = state.platforms.find(x => x.id === t.dataset.id);
+      if (!p) return;
+      confirmDelete(`Delete platform "${p.name}"? This cannot be undone.`, async () => {
+        await deletePlatform(p.id);
+        await reloadData();
+        render();
+        toast("🗑️ Platform deleted");
+      });
+      return;
     }
-  };
-}
+    if (a === "new-category") return openCategoryModal();
+    if (a === "edit-category") {
+      const c = state.categories.find(x => x.id === t.dataset.id);
+      if (c) openCategoryModal(c);
+      return;
+    }
+    if (a === "delete-category") {
+      const c = state.categories.find(x => x.id === t.dataset.id);
+      if (!c) return;
+      confirmDelete(`Delete category "${c.name}"?`, async () => {
+        await deleteCategory(c.id);
+        await reloadData();
+        render();
+        toast("🗑️ Category deleted");
+      });
+      return;
+    }
+  }
 
-/* =======================  GLOBAL CLICK HANDLERS  ======================= */
-document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-action]");
-  if (!t) return;
-  const a = t.dataset.action;
-  if (a === "open-auth") openAuth("login");
-  else if (a === "open-auth-register") openAuth("register");
-  else if (a === "logout") { if (auth) signOut(auth); }
-  else if (a === "go-admin") { location.hash = "/admin"; }
+  // Admin tabs
+  const tab = e.target.closest(".admin-tab");
+  if (tab) {
+    document.querySelectorAll(".admin-tab").forEach(b => {
+      b.classList.remove("border-orange-500", "text-orange-600");
+      b.classList.add("border-transparent", "text-gray-500");
+    });
+    tab.classList.remove("border-transparent", "text-gray-500");
+    tab.classList.add("border-orange-500", "text-orange-600");
+
+    const content = document.getElementById("adminTabContent");
+    if (!content) return;
+    if (tab.dataset.tab === "platforms") content.innerHTML = adminTabPlatforms();
+    if (tab.dataset.tab === "categories") content.innerHTML = adminTabCategories();
+    if (tab.dataset.tab === "audit") content.innerHTML = adminTabAudit();
+  }
 });
+
+/* =======================  DATA LOADER  ======================= */
+async function reloadData() {
+  try {
+    const [cats, plats] = await Promise.all([fetchCategories(), fetchPlatforms()]);
+    state.categories = cats;
+    state.platforms = plats;
+  } catch (e) {
+    console.warn("Reload error:", e);
+  }
+  if (!state.categories.length && state.demoMode) state.categories = DEMO_CATEGORIES;
+  if (!state.platforms.length && state.demoMode)  state.platforms  = DEMO_PLATFORMS;
+  state.products = DEMO_PRODUCTS;
+}
 
 /* =======================  INIT  ======================= */
 async function init() {
@@ -496,18 +953,7 @@ async function init() {
     });
   }
 
-  try {
-    if (!state.demoMode) {
-      const catSnap = await getDocs(collection(db, "categories"));
-      state.categories = catSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const plSnap = await getDocs(collection(db, "platforms"));
-      state.platforms = plSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    }
-  } catch (e) { console.warn("Firestore load:", e); }
-
-  if (!state.categories.length) state.categories = DEMO_CATEGORIES;
-  if (!state.platforms.length)  state.platforms  = DEMO_PLATFORMS;
-  state.products = DEMO_PRODUCTS;
+  await reloadData();
 
   window.addEventListener("hashchange", () => {
     state.route = location.hash.replace("#", "") || "/";
