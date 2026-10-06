@@ -21,6 +21,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
 /* ===== Firebase config ===== */
 const firebaseConfig = {
@@ -40,8 +41,8 @@ const state = {
   demoMode:false
 };
 
-let app=null, auth=null, db=null;
-try { app=initializeApp(firebaseConfig); auth=getAuth(app); db=getFirestore(app); }
+let app=null, auth=null, db=null, storage=null;
+try { app=initializeApp(firebaseConfig); auth=getAuth(app); db=getFirestore(app); storage=getStorage(app); }
 catch(e){ console.warn(e); state.demoMode=true; }
 
 /* ===== DEMO DATA ===== */
@@ -177,10 +178,10 @@ function renderHome(){
 
   <section class="max-w-7xl mx-auto px-4 mt-14">
     <h2 class="text-2xl font-bold mb-5">🛍️ Popular Categories</h2>
-    ${state.categories.length===0
+    ${state.categories.filter(c=>!c.parentId).length===0
       ? `<div class="bg-white border border-dashed rounded-2xl p-10 text-center text-gray-500">No categories. Add from Admin.</div>`
-      : `<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-          ${state.categories.map(c=>`<div class="bg-white border rounded-2xl p-5 text-center hover:shadow-lg transition"><div class="text-4xl mb-3">${esc(c.icon||"📦")}</div><div class="font-semibold text-sm">${esc(c.name)}</div></div>`).join("")}
+      : `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          ${state.categories.filter(c=>!c.parentId).slice(0,24).map(c=>`<div class="bg-white border rounded-2xl p-4 text-center hover:shadow-lg transition cursor-pointer"><div class="text-3xl mb-2">${esc(c.icon||"📦")}</div><div class="font-semibold text-xs">${esc(c.name)}</div></div>`).join("")}
         </div>`}
   </section>
 
@@ -189,8 +190,8 @@ function renderHome(){
     <div id="productGrid" class="grid grid-cols-2 md:grid-cols-4 gap-4">
       ${state.products.map(p=>`
         <a href="#/product/${p.id}" class="bg-white border rounded-2xl overflow-hidden hover:shadow-xl transition block">
-          <div class="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 grid place-items-center text-7xl">
-            ${esc(p.img||"📦")}
+          <div class="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden grid place-items-center">
+            ${p.imageUrl ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.name)}" class="w-full h-full object-cover group-hover:scale-105 transition"/>` : `<span class="text-7xl">${esc(p.img||"📦")}</span>`}
             ${p.old&&p.old>p.price?`<span class="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded">-${Math.round((1-p.price/p.old)*100)}%</span>`:""}
           </div>
           <div class="p-3">
@@ -261,7 +262,9 @@ function renderProductPage(p){
   <div class="max-w-7xl mx-auto px-4 py-10">
     <a href="#/" class="text-orange-600 text-sm font-semibold mb-5 inline-block">← Back to home</a>
     <div class="grid md:grid-cols-2 gap-10">
-      <div class="bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl aspect-square grid place-items-center text-[12rem]">${esc(p.img||"📦")}</div>
+      <div class="bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl aspect-square overflow-hidden grid place-items-center">
+  ${p.imageUrl ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.name)}" class="w-full h-full object-cover"/>` : `<span class="text-[12rem]">${esc(p.img||"📦")}</span>`}
+</div>
       <div>
         ${cat?`<span class="text-xs bg-orange-100 text-orange-700 font-bold px-3 py-1 rounded-full">${esc(cat.name)}</span>`:""}
         <h1 class="text-3xl font-extrabold mt-3 mb-3">${esc(p.name)}</h1>
@@ -285,6 +288,53 @@ function renderProductPage(p){
     </div>
   </div>
   ${footer()}`;
+}
+
+  /* ===== SEED CATEGORIES ===== */
+const SEED_CATEGORIES = [
+  { name:"Grocery", icon:"🛒", subs:["Meals Made Easy","Mother's Day Food","$1 Food Hub","Recipe Inspiration","Meat & Seafood","Fresh Produce","Frozen","Bakery & Bread","Snacks","Pantry","Deli","Dairy & Eggs","Beverages","Breakfast & Cereal","Baking","Candy","Global Cuisine","Alcohol","Floral Shop"] },
+  { name:"Clothing, Shoes & Accessories", icon:"👕", subs:["Premium Fashion","New Arrivals","Women","Women's Plus","Maternity","Men","Young Adult","Tween","Kids","Toddler","Baby","Shoes","Jewelry & Watches","Bags & Accessories","Swim Shop","Editors' Picks"] },
+  { name:"Baby & Kids", icon:"👶", subs:["Baby Clothing","Toddler Clothing","Kids Clothing","Bulk Baby Supplies","Diapers & Wipes","Baby Formula & Baby Food","Nursery & Decor","Kids Room","Baby Travel Gear","Baby Registry","WIC"] },
+  { name:"Pharmacy, Health & Wellness", icon:"💊", subs:["Pharmacy","Allergy & Sinus","Vitamins & Supplements","Caregiver Hub","Protein, Fitness & Weight Management","Women's Wellness","Pain Management","First Aid & Injury Recovery","Vision Center","Digestive Health & Wellness","Cough, Cold & Flu","Eyecare","Kids Health & Wellness","Diabetes Management","International Medicine","Benefits Hub"] },
+  { name:"Home, Garden & Tools", icon:"🏠", subs:["Patio & Garden","Tools & Home Improvement","Spring Home Edit","Furniture","Mattresses","Kitchen & Dining","Home Decor","Bedding","Bath","Appliances","Storage & Organization","Vacuums, Steamers & Floorcare","Luggage & Travel","Registry & Lists","Design Your Space"] },
+  { name:"Electronics", icon:"📺", subs:["TVs & Home Theater","Laptops, PCs & Tablets","Cell Phones & Accessories","Headphones & Speakers","Printers & Accessories","Cameras & Drones","Home Appliances","Wearables & Smart Tech","Smart Home & Wi-Fi","Batteries","Resold at Walmart"] },
+  { name:"Gaming", icon:"🎮", subs:["PlayStation","Nintendo","Xbox","PC Gaming","Meta","Nex Playground","Gaming Accessories","VR Headsets & Gear"] },
+  { name:"Auto & Tires", icon:"🚗", subs:["Tires & Installation","Auto Parts & Accessories","Oil and Fluids","Auto Detailing & Car Care","Batteries & Accessories","Auto Electronics","Automotive Tools & Equipment","Vehicles","RV Parts & Accessories","Auto Care Center","Schedule an Oil Change","Tire Services","Schedule Battery Installation"] },
+  { name:"Personal Care", icon:"🧴", subs:["Haircare","Bath and Body","Oral Care","Sexual Wellness","Feminine Care","Deodorant","Shave","Men's Essentials","Incontinence","Suncare & Tanning"] },
+  { name:"Beauty", icon:"💄", subs:["Makeup","Haircare","Skincare","Fragrance","Nail Care","Suncare & Tanning","Premium Beauty","Beauty Tech & Tools","The Curl Shop","Men's Grooming","K-Beauty Shop"] },
+  { name:"Toys & Outdoor Play", icon:"🧸", subs:["Toy Savings","Outdoor Play & Ride Ons","Preschool Toys","Dolls","Building Sets & Blocks","Games & Puzzles","Arts & Crafts","Action Figures","Cars & Remote Controls","Collectibles & Exclusives","Toys New Arrivals","Batteries"] },
+  { name:"Household Essentials", icon:"🧺", subs:["Cleaning Supplies","Laundry","Paper & Plastic","Air Fresheners","Pest Control","Dishwashing","Batteries","Delivery Subscriptions"] },
+  { name:"Pet Supplies", icon:"🐾", subs:["Dog Supplies","Dog Food","Dog Toys","Cat Supplies","Cat Food","Cat Toys","Premium Pets","Fish & Aquatic Pets","Small Animals","Birds","Farm Animals","Reptiles","Pet Prescriptions","Pet Profiles"] },
+  { name:"School, Office & Art Supplies", icon:"✏️", subs:["All School Supplies","All Office Supplies","Arts, Crafts & Sewing","Crafting","Art Supplies","Teacher's Classroom Shop","Classroom Registry","Sewing","Fabric","Shipping & Moving"] },
+  { name:"Sports & Outdoors", icon:"⚽", subs:["Outdoor Sports","Camping","Boating","Fishing","Hunting","Exercise & Fitness","Sports","Bikes","Games & Outdoor Recreation","Pools, Hot Tubs & Supplies","Sports Fan Shop"] },
+  { name:"Books, Movies & Music", icon:"📚", subs:["Books","Movies & TV Shows","Music","Musical Instruments","Premium Musical Instruments","Record Players","Comics"] },
+  { name:"Collectibles", icon:"🏆", subs:["New Arrivals","Trading Cards","Comic Books","Action Figures","Dolls & Dollhouses","Plush","Coins & Bullion"] },
+  { name:"Party Supplies", icon:"🎉", subs:["Cake Decorating","Decorations & Kits","Party Tableware","Party Favors","Gift Wrap & Bags","Balloons","Party Hats, Pinatas & More","Greeting Cards","Personalized Cards & Gifts"] }
+];
+
+async function seedCategories(){
+  if (!confirm("Load 18 main categories + ~200 subcategories? Existing ones stay.")) return;
+  toast("⏳ Loading... please wait");
+  try{
+    const existing = new Set(state.categories.map(c=>c.name.toLowerCase()));
+    let order = state.categories.length;
+    for (const main of SEED_CATEGORIES){
+      let mainId;
+      if (existing.has(main.name.toLowerCase())){
+        mainId = state.categories.find(c=>c.name.toLowerCase()===main.name.toLowerCase()).id;
+      } else {
+        mainId = await createCategory({ name: main.name, icon: main.icon, order: order++, parentId: "" });
+        existing.add(main.name.toLowerCase());
+      }
+      for (const sub of main.subs){
+        if (existing.has(sub.toLowerCase())) continue;
+        await createCategory({ name: sub, icon: "•", order: order++, parentId: mainId });
+        existing.add(sub.toLowerCase());
+      }
+    }
+    await reloadData(); render();
+    toast("✅ Categories loaded");
+  }catch(e){ toast("❌ "+e.message) }
 }
 
 /* ===== ADMIN ===== */
@@ -377,15 +427,20 @@ function adminTabCategories(){
   return `<div class="bg-white border rounded-2xl p-6">
     <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
       <h2 class="font-bold text-xl">All Categories</h2>
-      <button data-action="new-category" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-5 py-2.5 rounded-lg text-sm">+ New Category</button>
+      <div class="flex gap-2">
+        <button data-action="seed-categories" class="bg-gray-900 hover:bg-gray-800 text-white font-bold px-4 py-2.5 rounded-lg text-sm">📥 Load Default Categories</button>
+        <button data-action="new-category" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-5 py-2.5 rounded-lg text-sm">+ New Category</button>
+      </div>
     </div>
     ${state.categories.length===0
       ? `<div class="text-center py-16 text-gray-500"><div class="text-5xl mb-3">📂</div><p>No categories yet.</p></div>`
       : `<div class="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-          ${state.categories.map(c=>`<div class="border rounded-xl p-4 flex items-center justify-between hover:shadow-md transition">
-            <div class="flex items-center gap-3"><span class="text-3xl">${esc(c.icon||"📦")}</span><div><div class="font-semibold text-sm">${esc(c.name)}</div><div class="text-xs text-gray-500">Order: ${esc(c.order??"—")}</div></div></div>
+          ${state.categories.map(c=>{
+            const parent = state.categories.find(x=>x.id===c.parentId);
+            return `<div class="border rounded-xl p-4 flex items-center justify-between hover:shadow-md transition ${parent?'bg-gray-50/50':''}">
+            <div class="flex items-center gap-3"><span class="text-3xl">${esc(c.icon||"📦")}</span><div><div class="font-semibold text-sm">${parent?'↳ ':''}${esc(c.name)}</div><div class="text-xs text-gray-500">${parent?`Under: ${esc(parent.name)}`:`Main • Order: ${esc(c.order??"—")}`}</div></div></div>
             <div class="flex gap-2"><button data-action="edit-category" data-id="${c.id}" class="text-orange-600 text-xs font-semibold">Edit</button><button data-action="delete-category" data-id="${c.id}" class="text-red-600 text-xs font-semibold">Del</button></div>
-          </div>`).join("")}
+          </div>`;}).join("")}
         </div>`}
   </div>`;
 }
@@ -542,6 +597,11 @@ function openCategoryModal(cat=null){
       <h2 class="text-2xl font-bold mb-1">${editing?"Edit Category":"New Category"}</h2>
       <p class="text-sm text-gray-500 mb-6">Add a category</p>
       <label class="block text-sm font-semibold mb-1">Name *</label><input id="c-name" value="${esc(c.name)}" class="w-full border rounded-lg px-4 py-2.5 mb-4 focus:outline-none focus:border-orange-500"/>
+      <label class="block text-sm font-semibold mb-1">Type</label>
+      <select id="c-parentId" class="w-full border rounded-lg px-4 py-2.5 mb-4 focus:outline-none focus:border-orange-500">
+        <option value="">— Main Category —</option>
+        ${state.categories.filter(x=>!x.parentId && x.id !== c.id).map(x=>`<option value="${x.id}" ${c.parentId===x.id?"selected":""}>↳ ${esc(x.name)} (subcategory)</option>`).join("")}
+      </select>
       <label class="block text-sm font-semibold mb-1">Icon</label><input id="c-icon" value="${esc(c.icon)}" maxlength="4" class="w-full border rounded-lg px-4 py-2.5 text-2xl mb-4 focus:outline-none focus:border-orange-500"/>
       <label class="block text-sm font-semibold mb-1">Order</label><input id="c-order" type="number" value="${esc(c.order??0)}" class="w-full border rounded-lg px-4 py-2.5 mb-4 focus:outline-none focus:border-orange-500"/>
       <div id="formMsg" class="text-sm"></div>
@@ -553,8 +613,14 @@ function openCategoryModal(cat=null){
     const name=w.querySelector("#c-name").value.trim();
     const icon=w.querySelector("#c-icon").value.trim()||"📦";
     const order=parseInt(w.querySelector("#c-order").value)||0;
+    const parentId=w.querySelector("#c-parentId").value||"";
     if(!name){w.querySelector("#formMsg").className="text-sm text-red-600";w.querySelector("#formMsg").textContent="Name required";return}
-    try{ if(editing)await updateCategory(c.id,{name,icon,order}); else await createCategory({name,icon,order}); await reloadData();w.remove();render();toast("✅ Saved"); }catch(e){toast("❌ "+e.message)}
+    try{ 
+      const data={name,icon,order,parentId};
+      if(editing) await updateCategory(c.id,data); 
+      else await createCategory(data); 
+      await reloadData();w.remove();render();toast("✅ Saved"); 
+    }catch(e){toast("❌ "+e.message)}
   };
 }
 
@@ -571,7 +637,18 @@ function openProductModal(prod=null){
         <div class="md:col-span-2"><label class="block text-sm font-semibold mb-1">Name *</label><input id="p-name" value="${esc(d.name)}" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500"/></div>
         <div><label class="block text-sm font-semibold mb-1">Price ($) *</label><input id="p-price" type="number" step="0.01" value="${d.price}" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500"/></div>
         <div><label class="block text-sm font-semibold mb-1">Old Price ($)</label><input id="p-old" type="number" step="0.01" value="${d.old}" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500"/></div>
-        <div><label class="block text-sm font-semibold mb-1">Image (emoji)</label><input id="p-img" value="${esc(d.img||"📦")}" maxlength="4" class="w-full border rounded-lg px-4 py-2.5 text-2xl focus:outline-none focus:border-orange-500"/></div>
+        <div class="md:col-span-2">
+  <label class="block text-sm font-semibold mb-1">Product Image</label>
+  <div class="flex items-center gap-3">
+    <div id="p-preview" class="w-20 h-20 border rounded-lg bg-gray-50 grid place-items-center overflow-hidden text-3xl">${d.imageUrl?`<img src="${esc(d.imageUrl)}" class="w-full h-full object-cover"/>`:esc(d.img||"📦")}</div>
+    <div class="flex-1">
+      <input type="file" id="p-file" accept="image/*" class="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-orange-500 file:text-white file:font-semibold hover:file:bg-orange-600"/>
+      <input type="hidden" id="p-imageUrl" value="${esc(d.imageUrl||"")}"/>
+      <div class="text-xs text-gray-500 mt-1">ছবি সিলেক্ট করুন (max 2MB). অথবা নিচে emoji রাখুন।</div>
+    </div>
+    <div><label class="block text-sm font-semibold mb-1">Or Emoji</label><input id="p-img" value="${esc(d.img||"📦")}" maxlength="4" class="w-20 border rounded-lg px-3 py-2.5 text-2xl text-center focus:outline-none focus:border-orange-500"/></div>
+  </div>
+</div>
         <div><label class="block text-sm font-semibold mb-1">Tag</label><select id="p-tag" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500">${["Fast Selling","Choice","Top Brand","Plus","New"].map(t=>`<option value="${t}" ${d.tag===t?"selected":""}>${t}</option>`).join("")}</select></div>
         <div><label class="block text-sm font-semibold mb-1">Claimed %</label><input id="p-claimed" type="number" min="0" max="100" value="${d.claimed||0}" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500"/></div>
         <div><label class="block text-sm font-semibold mb-1">Stock</label><input id="p-stock" type="number" value="${d.stock||100}" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500"/></div>
@@ -583,20 +660,53 @@ function openProductModal(prod=null){
     </div></div>`);
   const w=document.getElementById("modalWrap");
   w.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>w.remove());
-  w.querySelector("#saveBtn").onclick=async()=>{
-    const name=w.querySelector("#p-name").value.trim();
-    const price=parseFloat(w.querySelector("#p-price").value)||0;
-    const old=parseFloat(w.querySelector("#p-old").value)||0;
-    const img=w.querySelector("#p-img").value.trim()||"📦";
-    const tag=w.querySelector("#p-tag").value;
-    const claimed=parseInt(w.querySelector("#p-claimed").value)||0;
-    const stock=parseInt(w.querySelector("#p-stock").value)||0;
-    const categoryId=w.querySelector("#p-categoryId").value;
-    const desc=w.querySelector("#p-desc").value.trim();
-    if(!name||price<=0){w.querySelector("#formMsg").className="text-sm text-red-600";w.querySelector("#formMsg").textContent="Name and valid price required";return}
-    const data={name,price,old,img,tag,claimed,stock,categoryId,desc};
-    try{ if(editing)await updateProduct(d.id,data); else {const nid=await createProduct(data);await logAction("PRODUCT_CREATED","product",nid,{name})} await reloadData();w.remove();render();toast("✅ Saved"); }catch(e){toast("❌ "+e.message)}
-  };
+  // file preview
+const fileInput = w.querySelector("#p-file");
+if (fileInput){
+  fileInput.addEventListener("change", (ev)=>{
+    const f = ev.target.files[0];
+    if (!f) return;
+    if (f.size > 2*1024*1024){ toast("⚠️ Max 2MB"); ev.target.value=""; return; }
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      w.querySelector("#p-preview").innerHTML = `<img src="${reader.result}" class="w-full h-full object-cover"/>`;
+    };
+    reader.readAsDataURL(f);
+  });
+}
+
+w.querySelector("#saveBtn").onclick=async()=>{
+  const btn = w.querySelector("#saveBtn");
+  btn.disabled = true;
+  btn.textContent = "Saving...";
+  const name=w.querySelector("#p-name").value.trim();
+  const price=parseFloat(w.querySelector("#p-price").value)||0;
+  const old=parseFloat(w.querySelector("#p-old").value)||0;
+  const img=w.querySelector("#p-img").value.trim()||"📦";
+  const tag=w.querySelector("#p-tag").value;
+  const claimed=parseInt(w.querySelector("#p-claimed").value)||0;
+  const stock=parseInt(w.querySelector("#p-stock").value)||0;
+  const categoryId=w.querySelector("#p-categoryId").value;
+  const desc=w.querySelector("#p-desc").value.trim();
+  let imageUrl = w.querySelector("#p-imageUrl").value || "";
+  
+  if(!name||price<=0){btn.disabled=false;btn.textContent=editing?"Save":"Create";w.querySelector("#formMsg").className="text-sm text-red-600";w.querySelector("#formMsg").textContent="Name and valid price required";return}
+  
+  try{
+    // Upload image if new file selected
+    const file = fileInput && fileInput.files[0];
+    if (file && storage){
+      const path = `products/${Date.now()}_${file.name}`;
+      const sRef = storageRef(storage, path);
+      await uploadBytes(sRef, file);
+      imageUrl = await getDownloadURL(sRef);
+    }
+    const data={name,price,old,img,tag,claimed,stock,categoryId,desc,imageUrl};
+    if(editing) await updateProduct(d.id,data); 
+    else { const nid = await createProduct(data); await logAction("PRODUCT_CREATED","product",nid,{name}) }
+    await reloadData();w.remove();render();toast("✅ Saved");
+  }catch(e){ btn.disabled=false; btn.textContent=editing?"Save":"Create"; w.querySelector("#formMsg").className="text-sm text-red-600"; w.querySelector("#formMsg").textContent="Error: "+e.message }
+};
 }
 
 function openTenantModal(t=null){
@@ -793,6 +903,7 @@ document.addEventListener("click",async(e)=>{
     if(a==="new-product") return openProductModal();
     if(a==="edit-product"){const p=state.products.find(x=>x.id===t.dataset.id);if(p)openProductModal(p);return}
     if(a==="delete-product"){const p=state.products.find(x=>x.id===t.dataset.id);if(!p)return;confirmDelete(`Delete product "${p.name}"?`,async()=>{await deleteProduct(p.id);await logAction("PRODUCT_DELETED","product",p.id,{name:p.name});await reloadData();render();toast("🗑️ Deleted")});return}
+    if(a==="seed-categories") return seedCategories();
     if(a==="new-category") return openCategoryModal();
     if(a==="edit-category"){const c=state.categories.find(x=>x.id===t.dataset.id);if(c)openCategoryModal(c);return}
     if(a==="delete-category"){const c=state.categories.find(x=>x.id===t.dataset.id);if(!c)return;confirmDelete(`Delete category "${c.name}"?`,async()=>{await deleteCategory(c.id);await reloadData();render();toast("🗑️ Deleted")});return}
