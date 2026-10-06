@@ -4,7 +4,6 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>oraXpress — Global Marketplace & SaaS Platform</title>
-<meta name="description" content="oraXpress — Global marketplace & SaaS platform." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛒</text></svg>" />
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
@@ -12,7 +11,6 @@
   .line-clamp-2 { display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden; }
   .fade-in { animation: fadeIn 0.3s ease-out; }
   @keyframes fadeIn { from { opacity:0; transform:translateY(6px);} to { opacity:1; transform:none;} }
-  /* modal overlay */
   .modal-bg { background: rgba(15,23,42,0.65); }
 </style>
 </head>
@@ -20,9 +18,6 @@
 <div id="app"></div>
 
 <script type="module">
-/* =========================================================================
-   FIREBASE SDK
-   ========================================================================= */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword,
@@ -30,13 +25,10 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import {
   getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc,
-  updateDoc, deleteDoc, serverTimestamp, query, orderBy
+  updateDoc, deleteDoc, serverTimestamp, query, orderBy, where
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-/* =========================================================================
-   ⚙️ STEP 1: Firebase Console থেকে নিচের মানগুলো বসান
-   Demo mode-এও CRUD কাজ করবে (localStorage-এ সেভ হবে)
-   ========================================================================= */
+/* ===== ⚙️ আপনার আসল Firebase config এখানে বসান ===== */
 const firebaseConfig = {
   apiKey: "AIzaSyC8ChMmwlHlqPfa8vGcMsaemXL_-EaB0C0",
   authDomain: "oraxpress2026.firebaseapp.com",
@@ -47,158 +39,153 @@ const firebaseConfig = {
   measurementId: "G-YS22PX486Z"
 };
 
-/* =======================  STATE  ======================= */
+/* ===== STATE ===== */
 const state = {
-  user: null,
-  profile: null,
+  user: null, profile: null,
   route: location.hash.replace("#", "") || "/",
-  categories: [],
-  platforms: [],
-  products: [],
-  demoMode: !firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY",
-  loading: true
+  categories: [], platforms: [], versions: [], products: [],
+  demoMode: !firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY"
 };
 
-let app = null, auth = null, db = null;
+let app=null, auth=null, db=null;
 if (!state.demoMode) {
-  try {
-    app = initializeApp(firebaseConfig);
-    auth = getAuth(app);
-    db = getFirestore(app);
-  } catch (e) { console.warn(e); state.demoMode = true; }
+  try { app=initializeApp(firebaseConfig); auth=getAuth(app); db=getFirestore(app); }
+  catch(e){ console.warn(e); state.demoMode=true; }
 }
 
-/* =======================  DEMO (fallback) DATA  ======================= */
+/* ===== DEMO DATA ===== */
 const DEMO_CATEGORIES = [
-  { id: "cat-electronics", name: "Consumer Electronics", icon: "📺", order: 1 },
-  { id: "cat-phones",      name: "Phones & Accessories",  icon: "📱", order: 2 },
-  { id: "cat-computers",   name: "Computers & Office",    icon: "💻", order: 3 },
-  { id: "cat-home",        name: "Home & Appliances",     icon: "🏠", order: 4 },
-  { id: "cat-fashion",     name: "Fashion & Apparel",     icon: "👕", order: 5 },
-  { id: "cat-beauty",      name: "Beauty & Health",       icon: "💄", order: 6 },
-  { id: "cat-sports",      name: "Sports & Outdoors",     icon: "🏕️", order: 7 },
-  { id: "cat-toys",        name: "Toys & Hobbies",        icon: "🎮", order: 8 }
+  { id:"cat-accounting",  name:"Accounting",   icon:"🧮", order:1 },
+  { id:"cat-ecommerce",   name:"E-commerce",   icon:"🛒", order:2 },
+  { id:"cat-restaurant",  name:"Restaurant",   icon:"🍽️", order:3 },
+  { id:"cat-education",   name:"Education",    icon:"🎓", order:4 },
+  { id:"cat-business",    name:"Business",     icon:"📦", order:5 },
+  { id:"cat-electronics", name:"Electronics",  icon:"📺", order:6 },
+  { id:"cat-fashion",     name:"Fashion",      icon:"👕", order:7 },
+  { id:"cat-beauty",      name:"Beauty",       icon:"💄", order:8 }
 ];
-
 const DEMO_PLATFORMS = [
-  { id: "pl-hisabai",    slug: "hisabai",    name: "Hisab AI",              categoryId: "cat-accounting", categoryName: "Accounting", desc: "Automated Cloud Invoicing & Financial Ledger",     icon: "🧮", color: "from-blue-600 to-indigo-600",    status: "LIVE", type: "PUBLIC_PRODUCT" },
-  { id: "pl-ecommerce",  slug: "e-commerce", name: "oraXpress Marketplace", categoryId: "cat-ecommerce",  categoryName: "E-commerce",  desc: "Global buyer-seller marketplace with protection",  icon: "🛒", color: "from-orange-500 to-red-500",      status: "LIVE", type: "PUBLIC_PRODUCT" },
-  { id: "pl-restaurant", slug: "restaurant", name: "oraRestaurant POS",     categoryId: "cat-restaurant", categoryName: "Restaurant",  desc: "Modern Cloud POS & Kitchen Display System",        icon: "🍽️", color: "from-red-500 to-pink-600",       status: "LIVE", type: "PUBLIC_PRODUCT" },
-  { id: "pl-school",     slug: "school",     name: "oraSchool ERP",         categoryId: "cat-education",  categoryName: "Education",   desc: "All-in-One Academy & Student ERP",                 icon: "🎓", color: "from-emerald-500 to-teal-600",   status: "LIVE", type: "PUBLIC_PRODUCT" },
-  { id: "pl-inventory",  slug: "inventory",  name: "oraInventory",          categoryId: "cat-business",   categoryName: "Business",    desc: "Multi-Warehouse Stock & Order Management",         icon: "📦", color: "from-purple-600 to-violet-600",  status: "LIVE", type: "PUBLIC_PRODUCT" }
+  { id:"pl-hisabai",   slug:"hisabai",    name:"Hisab AI",              categoryId:"cat-accounting",  categoryName:"Accounting", desc:"Automated Cloud Invoicing & Financial Ledger",    icon:"🧮", color:"from-blue-600 to-indigo-600",  status:"LIVE", type:"PUBLIC_PRODUCT", currentVersion:"v1.0.0" },
+  { id:"pl-restaurant",slug:"restaurant", name:"oraRestaurant POS",     categoryId:"cat-restaurant",  categoryName:"Restaurant", desc:"Modern Cloud POS & Kitchen Display System",      icon:"🍽️", color:"from-red-500 to-pink-600",     status:"LIVE", type:"PUBLIC_PRODUCT", currentVersion:"v1.0.0" },
+  { id:"pl-school",    slug:"school",     name:"oraSchool ERP",         categoryId:"cat-education",   categoryName:"Education",  desc:"All-in-One Academy & Student ERP",               icon:"🎓", color:"from-emerald-500 to-teal-600", status:"LIVE", type:"PUBLIC_PRODUCT", currentVersion:"v1.0.0" },
+  { id:"pl-inventory", slug:"inventory",  name:"oraInventory",          categoryId:"cat-business",    categoryName:"Business",   desc:"Multi-Warehouse Stock & Order Management",       icon:"📦", color:"from-purple-600 to-violet-600",status:"LIVE", type:"PUBLIC_PRODUCT", currentVersion:"v1.0.0" }
 ];
-
+const DEMO_VERSIONS = [
+  { id:"ver-1", platformId:"pl-hisabai", versionNumber:"v1.0.0", releaseNotes:"First release", status:"LIVE", buildRef:"", createdAt:{seconds:Date.now()/1000-86400*10}, createdBy:"system", publishedAt:{seconds:Date.now()/1000-86400*10} },
+  { id:"ver-2", platformId:"pl-restaurant", versionNumber:"v1.0.0", releaseNotes:"First release", status:"LIVE", buildRef:"", createdAt:{seconds:Date.now()/1000-86400*8},  createdBy:"system", publishedAt:{seconds:Date.now()/1000-86400*8} },
+  { id:"ver-3", platformId:"pl-school", versionNumber:"v1.0.0", releaseNotes:"First release", status:"LIVE", buildRef:"", createdAt:{seconds:Date.now()/1000-86400*6},  createdBy:"system", publishedAt:{seconds:Date.now()/1000-86400*6} },
+  { id:"ver-4", platformId:"pl-inventory", versionNumber:"v1.0.0", releaseNotes:"First release", status:"LIVE", buildRef:"", createdAt:{seconds:Date.now()/1000-86400*4},  createdBy:"system", publishedAt:{seconds:Date.now()/1000-86400*4} }
+];
 const DEMO_PRODUCTS = [
-  { id: 1, name: "Anker Soundcore Space One ANC Wireless Headphones", price: 49.99, old: 99.99, img: "🎧", claimed: 88, tag: "Fast Selling" },
-  { id: 2, name: "UGREEN 100W GaN Fast Charger 4-Port USB-C",         price: 34.50, old: 69.99, img: "🔌", claimed: 94, tag: "Fast Selling" },
-  { id: 3, name: "Xiaomi Smart Band 9 AMOLED 21-Day Battery",         price: 28.90, old: 40.00, img: "⌚", claimed: 76, tag: "Fast Selling" },
-  { id: 4, name: "Wireless Mechanical Keyboard 75% Hot-Swappable RGB",price: 42.80, old: 95.00, img: "⌨️", claimed: 82, tag: "Fast Selling" },
-  { id: 5, name: "Pagani Design Luxury Automatic Watch NH35 Sapphire",price: 78.50, old: 169.00,img: "⌚", claimed: 91, tag: "Choice" },
-  { id: 6, name: "Men Waterproof Tactical Cargo Pants Multi-Pocket",  price: 18.20, old: 39.00, img: "👖", claimed: 73, tag: "Choice" },
-  { id: 7, name: "4K Professional GPS Drone with 3-Axis Gimbal EIS",  price: 145.00,old: 299.00,img: "🚁", claimed: 66, tag: "Top Brand" },
-  { id: 8, name: "High-Speed Hair Dryer 110,000 RPM Brushless Motor", price: 39.99, old: 99.99, img: "💨", claimed: 89, tag: "Plus" }
+  { id:1, name:"Anker Soundcore Space One ANC Wireless Headphones", price:49.99, old:99.99, img:"🎧", claimed:88, tag:"Fast Selling" },
+  { id:2, name:"UGREEN 100W GaN Fast Charger 4-Port USB-C",         price:34.50, old:69.99, img:"🔌", claimed:94, tag:"Fast Selling" },
+  { id:3, name:"Xiaomi Smart Band 9 AMOLED 21-Day Battery",         price:28.90, old:40.00, img:"⌚", claimed:76, tag:"Fast Selling" },
+  { id:4, name:"Wireless Mechanical Keyboard 75% Hot-Swappable RGB",price:42.80, old:95.00, img:"⌨️", claimed:82, tag:"Fast Selling" },
+  { id:5, name:"Pagani Design Luxury Automatic Watch NH35",         price:78.50, old:169.00,img:"⌚", claimed:91, tag:"Choice" },
+  { id:6, name:"Men Waterproof Tactical Cargo Pants Multi-Pocket",  price:18.20, old:39.00, img:"👖", claimed:73, tag:"Choice" },
+  { id:7, name:"4K Professional GPS Drone with 3-Axis Gimbal EIS",  price:145.00,old:299.00,img:"🚁", claimed:66, tag:"Top Brand" },
+  { id:8, name:"High-Speed Hair Dryer 110,000 RPM Brushless Motor", price:39.99, old:99.99, img:"💨", claimed:89, tag:"Plus" }
 ];
 
-/* =======================  DATA LAYER  ======================= */
-/* Demo mode-এ localStorage, real mode-এ Firestore */
+/* ===== LOCALSTORAGE (Demo mode) ===== */
+const LS = { CAT:"orax_cat", PL:"orax_pl", VER:"orax_ver" };
+function lsGet(k, fb){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):fb; }catch{ return fb; } }
+function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} }
 
-const LS_KEY_CAT = "oraxpress_categories";
-const LS_KEY_PL  = "oraxpress_platforms";
+/* ===== HELPERS ===== */
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const slugify = s => s.toString().toLowerCase().trim().replace(/[^\w\s-]/g,"").replace(/[\s_]+/g,"-").replace(/-+/g,"-");
+const fmtDate = ts => {
+  if (!ts) return "—";
+  const d = ts.seconds ? new Date(ts.seconds*1000) : new Date(ts);
+  return d.toLocaleDateString() + " " + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+};
+const bumpVersion = (v, type="patch") => {
+  const m = (v||"v1.0.0").replace("v","").split(".").map(n=>parseInt(n)||0);
+  while(m.length<3) m.push(0);
+  if (type==="major"){ m[0]++; m[1]=0; m[2]=0; }
+  else if (type==="minor"){ m[1]++; m[2]=0; }
+  else m[2]++;
+  return "v"+m.join(".");
+};
 
-function loadLS(key, fallback) {
-  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
-  catch { return fallback; }
+/* ===== DATA LAYER ===== */
+async function fetchCategories(){
+  if (state.demoMode) return lsGet(LS.CAT, DEMO_CATEGORIES);
+  const s = await getDocs(query(collection(db,"categories"), orderBy("order","asc")));
+  return s.docs.map(d=>({id:d.id, ...d.data()}));
 }
-function saveLS(key, val) {
-  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+async function fetchPlatforms(){
+  if (state.demoMode) return lsGet(LS.PL, DEMO_PLATFORMS);
+  const s = await getDocs(collection(db,"platforms"));
+  return s.docs.map(d=>({id:d.id, ...d.data()}));
 }
-
-async function fetchCategories() {
-  if (state.demoMode) return loadLS(LS_KEY_CAT, DEMO_CATEGORIES);
-  const snap = await getDocs(query(collection(db, "categories"), orderBy("order", "asc")));
-  const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  return list.length ? list : [];
-}
-
-async function fetchPlatforms() {
-  if (state.demoMode) return loadLS(LS_KEY_PL, DEMO_PLATFORMS);
-  const snap = await getDocs(collection(db, "platforms"));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-}
-
-async function createCategory(data) {
-  if (state.demoMode) {
-    const id = "cat-" + Date.now();
-    const next = [...state.categories, { id, ...data }];
-    saveLS(LS_KEY_CAT, next);
-    return id;
-  }
-  const ref = await addDoc(collection(db, "categories"), { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
-  return ref.id;
-}
-
-async function updateCategory(id, data) {
-  if (state.demoMode) {
-    const next = state.categories.map(c => c.id === id ? { ...c, ...data } : c);
-    saveLS(LS_KEY_CAT, next);
-    return;
-  }
-  await updateDoc(doc(db, "categories", id), { ...data, updatedAt: serverTimestamp() });
+async function fetchVersions(){
+  if (state.demoMode) return lsGet(LS.VER, DEMO_VERSIONS);
+  const s = await getDocs(collection(db,"platformVersions"));
+  return s.docs.map(d=>({id:d.id, ...d.data()}));
 }
 
-async function deleteCategory(id) {
-  if (state.demoMode) {
-    saveLS(LS_KEY_CAT, state.categories.filter(c => c.id !== id));
-    return;
-  }
-  await deleteDoc(doc(db, "categories", id));
+async function createCategory(data){
+  if (state.demoMode){ const id="cat-"+Date.now(); lsSet(LS.CAT, [...state.categories, {id, ...data}]); return id; }
+  const r = await addDoc(collection(db,"categories"), {...data, createdAt:serverTimestamp(), updatedAt:serverTimestamp()});
+  return r.id;
+}
+async function updateCategory(id, data){
+  if (state.demoMode){ lsSet(LS.CAT, state.categories.map(c=>c.id===id?{...c,...data}:c)); return; }
+  await updateDoc(doc(db,"categories",id), {...data, updatedAt:serverTimestamp()});
+}
+async function deleteCategory(id){
+  if (state.demoMode){ lsSet(LS.CAT, state.categories.filter(c=>c.id!==id)); return; }
+  await deleteDoc(doc(db,"categories",id));
+}
+async function createPlatform(data){
+  if (state.demoMode){ const id="pl-"+Date.now(); lsSet(LS.PL, [...state.platforms, {id, ...data}]); return id; }
+  const r = await addDoc(collection(db,"platforms"), {...data, createdAt:serverTimestamp(), updatedAt:serverTimestamp()});
+  return r.id;
+}
+async function updatePlatform(id, data){
+  if (state.demoMode){ lsSet(LS.PL, state.platforms.map(p=>p.id===id?{...p,...data}:p)); return; }
+  await updateDoc(doc(db,"platforms",id), {...data, updatedAt:serverTimestamp()});
+}
+async function deletePlatform(id){
+  if (state.demoMode){ lsSet(LS.PL, state.platforms.filter(p=>p.id!==id)); return; }
+  await deleteDoc(doc(db,"platforms",id));
+}
+async function createVersion(data){
+  if (state.demoMode){ const id="ver-"+Date.now(); lsSet(LS.VER, [...state.versions, {id, ...data}]); return id; }
+  const r = await addDoc(collection(db,"platformVersions"), {...data, createdAt:serverTimestamp()});
+  return r.id;
+}
+async function updateVersion(id, data){
+  if (state.demoMode){ lsSet(LS.VER, state.versions.map(v=>v.id===id?{...v,...data}:v)); return; }
+  await updateDoc(doc(db,"platformVersions",id), {...data, updatedAt:serverTimestamp()});
+}
+async function deleteVersion(id){
+  if (state.demoMode){ lsSet(LS.VER, state.versions.filter(v=>v.id!==id)); return; }
+  await deleteDoc(doc(db,"platformVersions",id));
 }
 
-async function createPlatform(data) {
-  if (state.demoMode) {
-    const id = "pl-" + Date.now();
-    const next = [...state.platforms, { id, ...data }];
-    saveLS(LS_KEY_PL, next);
-    return id;
-  }
-  const ref = await addDoc(collection(db, "platforms"), { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
-  return ref.id;
+/* ===== AUDIT LOG ===== */
+async function logAction(action, entityType, entityId, metadata={}){
+  if (state.demoMode) return;
+  try{
+    await addDoc(collection(db,"auditLogs"), {
+      actorId: state.user?.uid || "system",
+      actorEmail: state.user?.email || "",
+      action, entityType, entityId,
+      metadata, timestamp: serverTimestamp()
+    });
+  }catch(e){ console.warn("audit fail", e); }
 }
 
-async function updatePlatform(id, data) {
-  if (state.demoMode) {
-    const next = state.platforms.map(p => p.id === id ? { ...p, ...data } : p);
-    saveLS(LS_KEY_PL, next);
-    return;
-  }
-  await updateDoc(doc(db, "platforms", id), { ...data, updatedAt: serverTimestamp() });
-}
-
-async function deletePlatform(id) {
-  if (state.demoMode) {
-    saveLS(LS_KEY_PL, state.platforms.filter(p => p.id !== id));
-    return;
-  }
-  await deleteDoc(doc(db, "platforms", id));
-}
-
-/* =======================  HELPERS  ======================= */
-function slugify(s) {
-  return s.toString().toLowerCase().trim()
-    .replace(/[^\w\s-]/g, "").replace(/[\s_]+/g, "-").replace(/-+/g, "-");
-}
-function uid(prefix="id") { return prefix + "-" + Math.random().toString(36).slice(2,9); }
-function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-
-/* =======================  HEADER & FOOTER  ======================= */
-function header() {
+/* ===== HEADER ===== */
+function header(){
   const right = state.user
     ? `<div class="flex items-center gap-2">
-         <button data-action="go-admin" class="hidden md:inline-block text-sm font-semibold text-gray-700 hover:text-orange-600">Admin</button>
          <button data-action="logout" class="text-sm font-semibold bg-gray-900 text-white px-4 py-2 rounded-full hover:bg-gray-800">Logout</button>
        </div>`
     : `<button data-action="open-auth" class="text-sm font-semibold bg-orange-500 text-white px-4 py-2 rounded-full hover:bg-orange-600">Sign In</button>`;
-
   return `
   <header class="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-gray-200">
     <div class="max-w-7xl mx-auto px-4 py-3 flex items-center gap-4">
@@ -207,60 +194,47 @@ function header() {
         <span class="text-xl font-bold">ora<span class="text-orange-500">Xpress</span></span>
       </a>
       <div class="flex-1 hidden md:flex">
-        <input placeholder="Search deals, products & brands..." class="w-full border border-gray-300 rounded-full px-5 py-2.5 text-sm focus:outline-none focus:border-orange-500" />
+        <input placeholder="Search deals..." class="w-full border border-gray-300 rounded-full px-5 py-2.5 text-sm focus:outline-none focus:border-orange-500"/>
       </div>
       <nav class="hidden lg:flex items-center gap-6 text-sm font-medium text-gray-700">
         <a href="#/" class="hover:text-orange-600">Home</a>
-        <a href="#/e-commerce" class="hover:text-orange-600">Marketplace</a>
+        <a href="#/admin" class="hover:text-orange-600">Admin</a>
       </nav>
       ${right}
     </div>
   </header>`;
 }
 
-function footer() {
+/* ===== FOOTER ===== */
+function footer(){
   return `
   <footer class="bg-gray-100 border-t border-gray-200 mt-16">
-    <div class="max-w-7xl mx-auto px-4 py-12 grid md:grid-cols-4 gap-8 text-sm">
+    <div class="max-w-7xl mx-auto px-4 py-8 grid md:grid-cols-3 gap-8 text-sm">
       <div>
         <h4 class="font-bold mb-3">Customer Care</h4>
-        <ul class="space-y-2 text-gray-600">
-          <li><a href="#" class="hover:text-orange-600">Help Center</a></li>
-          <li><a href="#" class="hover:text-orange-600">Buyer Protection</a></li>
-          <li><a href="#" class="hover:text-orange-600">Track Order</a></li>
-        </ul>
+        <ul class="space-y-1 text-gray-600"><li>Help Center</li><li>Buyer Protection</li><li>Returns</li></ul>
       </div>
       <div>
         <h4 class="font-bold mb-3">Business Suites</h4>
-        <ul class="space-y-2 text-gray-600">
-          ${state.platforms.slice(0,4).map(p => `<li><a href="#/${p.slug}" class="hover:text-orange-600">${esc(p.name)}</a></li>`).join("")}
+        <ul class="space-y-1 text-gray-600">
+          ${state.platforms.slice(0,4).map(p=>`<li><a href="#/${esc(p.slug)}" class="hover:text-orange-600">${esc(p.name)}</a></li>`).join("")}
         </ul>
       </div>
       <div>
         <h4 class="font-bold mb-3">Sell With Us</h4>
-        <ul class="space-y-2 text-gray-600">
-          <li><a href="#" class="hover:text-orange-600">Become a Seller</a></li>
-          <li><a href="#" class="hover:text-orange-600">Affiliate Program</a></li>
-        </ul>
-      </div>
-      <div>
-        <h4 class="font-bold mb-3">Stay Updated</h4>
-        <input type="email" placeholder="Your email..." class="w-full border border-gray-300 rounded-lg px-4 py-2 mb-2"/>
-        <button class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 rounded-lg">Subscribe</button>
+        <ul class="space-y-1 text-gray-600"><li>Become a Seller</li><li>Affiliate Program</li></ul>
       </div>
     </div>
-    <div class="border-t border-gray-200 py-5 text-center text-xs text-gray-500">
-      © 2026 oraXpress Inc. All rights reserved.
-    </div>
+    <div class="border-t py-4 text-center text-xs text-gray-500">© 2026 oraXpress Inc.</div>
   </footer>`;
 }
 
-/* =======================  HOME  ======================= */
-function renderHome() {
+/* ===== HOME ===== */
+function renderHome(){
   return `
   ${header()}
-  <section class="relative bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white overflow-hidden">
-    <div class="max-w-7xl mx-auto px-4 py-16 md:py-24 grid md:grid-cols-2 gap-10 items-center">
+  <section class="bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white">
+    <div class="max-w-7xl mx-auto px-4 py-16 md:py-20 grid md:grid-cols-2 gap-10 items-center">
       <div class="fade-in">
         <div class="flex gap-2 mb-4 flex-wrap">
           <span class="bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full">MEGA SPRING FESTIVAL</span>
@@ -269,84 +243,49 @@ function renderHome() {
         <h1 class="text-4xl md:text-6xl font-extrabold leading-tight mb-5">
           Up to <span class="text-orange-400">75% Off</span><br/>Global Tech & Gadgets
         </h1>
-        <p class="text-gray-300 mb-8 text-lg">Free Worldwide Shipping on Choice items over $15.</p>
-        <a href="#/e-commerce" class="inline-block bg-orange-500 hover:bg-orange-600 text-white font-bold px-8 py-4 rounded-full text-lg shadow-lg shadow-orange-500/30">Shop Tech Deals →</a>
+        <p class="text-gray-300 mb-8 text-lg">Free Worldwide Shipping over $15.</p>
+        <a href="#/admin" class="inline-block bg-orange-500 hover:bg-orange-600 text-white font-bold px-8 py-4 rounded-full text-lg">Shop Now →</a>
       </div>
       <div class="text-center"><div class="text-[10rem] md:text-[14rem]">🎧</div></div>
     </div>
   </section>
 
   <section class="max-w-7xl mx-auto px-4 -mt-8 relative z-10">
-    <div class="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+    <div class="bg-white rounded-2xl shadow-lg p-6 border">
       <div class="flex flex-col md:flex-row items-center justify-between gap-4">
         <div class="flex items-center gap-3">
           <div class="w-12 h-12 rounded-full bg-orange-100 grid place-items-center text-2xl">👤</div>
-          <div>
-            <h3 class="font-bold">Welcome to oraXpress</h3>
-            <p class="text-sm text-gray-500">Global buyer guarantees</p>
-          </div>
+          <div><h3 class="font-bold">Welcome to oraXpress</h3><p class="text-sm text-gray-500">Global buyer guarantees</p></div>
         </div>
         <div class="flex gap-3 w-full md:w-auto">
-          <button data-action="open-auth" class="flex-1 md:flex-none bg-orange-500 hover:bg-orange-600 text-white font-bold px-8 py-3 rounded-full">Sign In</button>
-          <button data-action="open-auth-register" class="flex-1 md:flex-none bg-gray-900 hover:bg-gray-800 text-white font-bold px-8 py-3 rounded-full">Register</button>
+          <button data-action="open-auth" class="flex-1 md:flex-none bg-orange-500 text-white font-bold px-8 py-3 rounded-full">Sign In</button>
+          <button data-action="open-auth-register" class="flex-1 md:flex-none bg-gray-900 text-white font-bold px-8 py-3 rounded-full">Register</button>
         </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="max-w-7xl mx-auto px-4 mt-10">
-    <div class="flex items-center justify-between mb-4">
-      <h3 class="text-lg font-bold">🎟️ Exclusive Vouchers</h3>
-      <a href="#" class="text-orange-600 text-sm font-semibold">CLAIM</a>
-    </div>
-    <div class="grid md:grid-cols-2 gap-4">
-      <div class="bg-gradient-to-r from-orange-50 to-yellow-50 border border-orange-200 rounded-xl p-5 flex justify-between items-center">
-        <div class="flex items-center gap-4">
-          <div class="bg-orange-500 text-white font-bold rounded-lg px-3 py-2 text-center leading-tight"><div class="text-lg">$5</div><div class="text-[10px]">OFF</div></div>
-          <div><div class="font-bold">First Order Bonus</div><div class="text-sm text-gray-600">Orders over $15</div></div>
-        </div>
-        <span class="text-2xl">🎁</span>
-      </div>
-      <div class="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-xl p-5 flex justify-between items-center">
-        <div class="flex items-center gap-4">
-          <div class="bg-purple-500 text-white font-bold rounded-lg px-3 py-2 text-center leading-tight"><div class="text-lg">$20</div><div class="text-[10px]">OFF</div></div>
-          <div><div class="font-bold">Mega Tech Week</div><div class="text-sm text-gray-600">Orders over $100</div></div>
-        </div>
-        <span class="text-2xl">🎁</span>
       </div>
     </div>
   </section>
 
   <section class="max-w-7xl mx-auto px-4 mt-14">
-    <div class="flex items-center justify-between mb-5">
-      <h2 class="text-2xl font-bold">🛍️ Popular Categories</h2>
-      <span class="text-sm text-gray-500">${state.categories.length} categories</span>
-    </div>
-    ${state.categories.length === 0
-      ? `<div class="bg-white border border-dashed rounded-2xl p-10 text-center text-gray-500">
-           No categories yet. Go to <a href="#/admin" class="text-orange-600 font-semibold">Admin</a> to add.
-         </div>`
+    <h2 class="text-2xl font-bold mb-5">🛍️ Popular Categories</h2>
+    ${state.categories.length===0
+      ? `<div class="bg-white border border-dashed rounded-2xl p-10 text-center text-gray-500">No categories. Add from <a href="#/admin" class="text-orange-600 font-semibold">Admin</a>.</div>`
       : `<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-          ${state.categories.map(c => `
-            <a href="#/e-commerce" class="bg-white border border-gray-200 rounded-2xl p-5 text-center hover:shadow-lg hover:border-orange-300 transition">
-              <div class="text-4xl mb-3">${esc(c.icon || "📦")}</div>
-              <div class="font-semibold text-gray-800 text-sm">${esc(c.name)}</div>
-            </a>
-          `).join("")}
+          ${state.categories.map(c=>`
+            <div class="bg-white border rounded-2xl p-5 text-center hover:shadow-lg transition">
+              <div class="text-4xl mb-3">${esc(c.icon||"📦")}</div>
+              <div class="font-semibold text-sm">${esc(c.name)}</div>
+            </div>`).join("")}
         </div>`}
   </section>
 
   <section class="max-w-7xl mx-auto px-4 mt-14">
-    <div class="flex items-center justify-between mb-5">
-      <h2 class="text-2xl font-bold">🔥 Trending Now</h2>
-    </div>
+    <h2 class="text-2xl font-bold mb-5">🔥 Trending Now</h2>
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-      ${state.products.map(p => `
-        <div class="bg-white border border-gray-200 rounded-2xl overflow-hidden hover:shadow-xl transition">
+      ${state.products.map(p=>`
+        <div class="bg-white border rounded-2xl overflow-hidden hover:shadow-xl transition">
           <div class="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 grid place-items-center text-7xl">
             ${p.img}
-            <span class="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded">-${Math.round((1 - p.price/p.old)*100)}%</span>
-            <span class="absolute bottom-2 left-2 bg-gray-900/80 text-white text-[10px] font-semibold px-2 py-1 rounded-full">🔥 ${p.tag}</span>
+            <span class="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded">-${Math.round((1-p.price/p.old)*100)}%</span>
           </div>
           <div class="p-3">
             <div class="text-sm text-gray-800 line-clamp-2 h-10 mb-2">${esc(p.name)}</div>
@@ -355,8 +294,7 @@ function renderHome() {
               <span class="text-xs text-gray-400 line-through">$${p.old}</span>
             </div>
           </div>
-        </div>
-      `).join("")}
+        </div>`).join("")}
     </div>
   </section>
 
@@ -365,58 +303,93 @@ function renderHome() {
       <div class="text-center mb-10">
         <span class="bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full">SAAS PLATFORMS</span>
         <h2 class="text-3xl md:text-4xl font-extrabold mt-4">oraXpress Business Solutions</h2>
-        <p class="text-gray-300 mt-3">Cloud POS & ERP apps for every business.</p>
       </div>
-      ${state.platforms.length === 0
-        ? `<div class="text-center py-10 text-gray-400">No platforms yet. Add from Admin.</div>`
+      ${state.platforms.length===0
+        ? `<div class="text-center py-10 text-gray-400">No platforms yet.</div>`
         : `<div class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-          ${state.platforms.map(p => `
-            <a href="#/${esc(p.slug)}" class="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 hover:border-orange-400/50 transition group">
-              <div class="w-14 h-14 rounded-xl bg-gradient-to-br ${p.color || 'from-orange-500 to-red-500'} grid place-items-center text-3xl mb-4">${esc(p.icon || "🧩")}</div>
-              <h3 class="text-xl font-bold mb-1">${esc(p.name)}</h3>
-              <p class="text-sm text-gray-300 mb-3">${esc(p.desc || "")}</p>
-              <div class="flex items-center justify-between">
-                <span class="text-xs bg-emerald-500/20 text-emerald-300 font-bold px-2 py-1 rounded">${esc(p.status || "LIVE")}</span>
-                <span class="text-orange-400 font-semibold text-sm group-hover:translate-x-1 transition">Explore →</span>
-              </div>
-            </a>
-          `).join("")}
-        </div>`}
+            ${state.platforms.map(p=>`
+              <a href="#/${esc(p.slug)}" class="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition group">
+                <div class="w-14 h-14 rounded-xl bg-gradient-to-br ${p.color||'from-orange-500 to-red-500'} grid place-items-center text-3xl mb-4">${esc(p.icon||"🧩")}</div>
+                <h3 class="text-xl font-bold mb-1">${esc(p.name)}</h3>
+                <p class="text-sm text-gray-300 mb-3">${esc(p.desc||"")}</p>
+                <div class="flex items-center justify-between">
+                  <span class="text-xs bg-emerald-500/20 text-emerald-300 font-bold px-2 py-1 rounded">${esc(p.status||"LIVE")}</span>
+                  <span class="text-orange-400 font-semibold text-sm">Explore →</span>
+                </div>
+              </a>`).join("")}
+          </div>`}
     </div>
   </section>
   ${footer()}`;
 }
 
-/* =======================  PLATFORM PAGE  ======================= */
-function renderPlatformPage(p) {
+/* ===== PLATFORM PAGE (with version history) ===== */
+function renderPlatformPage(p){
+  const myVersions = state.versions
+    .filter(v => v.platformId === p.id)
+    .sort((a,b)=> (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+  const liveVer = myVersions.find(v=>v.status==="LIVE");
+
+  const statusColor = {
+    LIVE: "bg-emerald-100 text-emerald-700",
+    DRAFT: "bg-yellow-100 text-yellow-700",
+    TESTING: "bg-blue-100 text-blue-700",
+    APPROVED: "bg-purple-100 text-purple-700",
+    ROLLED_BACK: "bg-red-100 text-red-700",
+    ARCHIVED: "bg-gray-100 text-gray-600"
+  };
+
   return `
   ${header()}
-  <section class="bg-gradient-to-br ${p.color || 'from-orange-500 to-red-500'} text-white">
+  <section class="bg-gradient-to-br ${p.color||'from-orange-500 to-red-500'} text-white">
     <div class="max-w-7xl mx-auto px-4 py-16 fade-in">
-      <div class="w-20 h-20 rounded-2xl bg-white/20 backdrop-blur grid place-items-center text-5xl mb-5">${esc(p.icon || "🧩")}</div>
-      <span class="bg-white/20 text-xs font-bold px-3 py-1 rounded-full">${esc(p.categoryName || p.categoryId || "Platform")}</span>
+      <div class="w-20 h-20 rounded-2xl bg-white/20 backdrop-blur grid place-items-center text-5xl mb-5">${esc(p.icon||"🧩")}</div>
+      <span class="bg-white/20 text-xs font-bold px-3 py-1 rounded-full">${esc(p.categoryName||"Platform")}</span>
       <h1 class="text-4xl md:text-5xl font-extrabold mt-4 mb-3">${esc(p.name)}</h1>
-      <p class="text-lg opacity-90 max-w-2xl">${esc(p.desc || "")}</p>
+      <p class="text-lg opacity-90 max-w-2xl">${esc(p.desc||"")}</p>
+      <div class="mt-4 flex flex-wrap gap-2 text-sm">
+        <span class="bg-white/20 px-3 py-1 rounded-full">Status: <b>${esc(p.status||"LIVE")}</b></span>
+        <span class="bg-white/20 px-3 py-1 rounded-full">Current: <b>${esc(liveVer?.versionNumber || p.currentVersion || "—")}</b></span>
+      </div>
       <div class="mt-6 flex gap-3 flex-wrap">
         <button class="bg-white text-gray-900 font-bold px-6 py-3 rounded-full">Start Free Trial</button>
-        <button class="bg-white/20 border border-white/30 font-bold px-6 py-3 rounded-full">Try Demo</button>
       </div>
     </div>
   </section>
+
   <section class="max-w-7xl mx-auto px-4 py-16">
-    <div class="grid md:grid-cols-3 gap-6">
-      <div class="bg-white border rounded-2xl p-6"><div class="text-3xl mb-2">⚡</div><h3 class="font-bold text-lg mb-1">Fast Setup</h3><p class="text-gray-600 text-sm">Get running in minutes.</p></div>
-      <div class="bg-white border rounded-2xl p-6"><div class="text-3xl mb-2">🔒</div><h3 class="font-bold text-lg mb-1">Secure</h3><p class="text-gray-600 text-sm">256-bit encryption.</p></div>
-      <div class="bg-white border rounded-2xl p-6"><div class="text-3xl mb-2">🌍</div><h3 class="font-bold text-lg mb-1">Global Ready</h3><p class="text-gray-600 text-sm">Multi-currency support.</p></div>
-    </div>
-    <div class="mt-10 text-center"><a href="#/" class="text-orange-600 font-semibold">← Back to Home</a></div>
+    <h2 class="text-2xl font-bold mb-5">📜 Version History</h2>
+    ${myVersions.length===0
+      ? `<div class="bg-white border border-dashed rounded-2xl p-10 text-center text-gray-500">No versions published yet.</div>`
+      : `<div class="bg-white border rounded-2xl overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-left text-gray-600">
+              <tr>
+                <th class="p-3 font-semibold">Version</th>
+                <th class="p-3 font-semibold">Release Notes</th>
+                <th class="p-3 font-semibold">Status</th>
+                <th class="p-3 font-semibold">Published</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${myVersions.map(v=>`
+                <tr class="border-t border-gray-100">
+                  <td class="p-3 font-mono font-bold">${esc(v.versionNumber)}</td>
+                  <td class="p-3 text-gray-700">${esc(v.releaseNotes||"—")}</td>
+                  <td class="p-3"><span class="text-xs font-bold px-2 py-1 rounded ${statusColor[v.status]||'bg-gray-100'}">${esc(v.status)}</span></td>
+                  <td class="p-3 text-gray-500 text-xs">${fmtDate(v.publishedAt || v.createdAt)}</td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>`}
+    <div class="mt-8 text-center"><a href="#/" class="text-orange-600 font-semibold">← Back to Home</a></div>
   </section>
   ${footer()}`;
 }
 
-/* =======================  ADMIN  ======================= */
-function renderAdmin() {
-  if (!state.user && !state.demoMode) {
+/* ===== ADMIN ===== */
+function renderAdmin(){
+  if (!state.user && !state.demoMode){
     return `${header()}<div class="max-w-xl mx-auto py-24 text-center">
       <h1 class="text-2xl font-bold mb-4">Admin Login Required</h1>
       <button data-action="open-auth" class="bg-orange-500 text-white font-bold px-6 py-3 rounded-full">Sign In</button>
@@ -424,10 +397,12 @@ function renderAdmin() {
   }
 
   const stats = [
-    { label: "Total Platforms", value: state.platforms.length, icon: "🧩", color: "from-blue-500 to-indigo-500" },
-    { label: "Live Platforms",  value: state.platforms.filter(p=>p.status==="LIVE").length, icon: "🟢", color: "from-emerald-500 to-teal-500" },
-    { label: "Categories",      value: state.categories.length, icon: "📂", color: "from-purple-500 to-pink-500" },
-    { label: "Demo Mode",       value: state.demoMode ? "ON" : "OFF", icon: "⚙️", color: "from-orange-500 to-red-500" }
+    { label:"Platforms", value:state.platforms.length, icon:"🧩", color:"from-blue-500 to-indigo-500" },
+    { label:"Live Platforms", value:state.platforms.filter(p=>p.status==="LIVE").length, icon:"🟢", color:"from-emerald-500 to-teal-500" },
+    { label:"Categories", value:state.categories.length, icon:"📂", color:"from-purple-500 to-pink-500" },
+    { label:"Total Versions", value:state.versions.length, icon:"📜", color:"from-orange-500 to-red-500" },
+    { label:"Pending Approval", value:state.versions.filter(v=>v.status==="TESTING").length, icon:"⏳", color:"from-yellow-500 to-amber-600" },
+    { label:"Demo Mode", value:state.demoMode?"ON":"OFF", icon:"⚙️", color:"from-gray-500 to-gray-700" }
   ];
 
   return `
@@ -435,248 +410,224 @@ function renderAdmin() {
   <div class="max-w-7xl mx-auto px-4 py-8">
     <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
       <h1 class="text-3xl font-bold">Super Admin Dashboard</h1>
-      <div class="text-sm text-gray-500">${state.user ? esc(state.user.email || "") : "Demo Mode"}</div>
+      <div class="text-sm text-gray-500">${state.user ? esc(state.user.email||"") : "Demo Mode"}</div>
     </div>
 
-    ${state.demoMode ? `<div class="bg-yellow-50 border border-yellow-300 text-yellow-800 p-4 rounded-xl mb-6 text-sm">
-      ⚠️ Demo Mode চলছে। এখানে যা যোগ/এডিট করবেন সব আপনার ব্রাউজারে (localStorage-এ) সেভ হবে। Firebase বসালে ক্লাউডে সেভ হবে।
-    </div>` : ""}
-
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-      ${stats.map(s => `
-        <div class="bg-white border rounded-2xl p-5">
-          <div class="w-12 h-12 rounded-xl bg-gradient-to-br ${s.color} grid place-items-center text-2xl text-white mb-3">${s.icon}</div>
-          <div class="text-3xl font-extrabold">${s.value}</div>
-          <div class="text-sm text-gray-500">${s.label}</div>
-        </div>
-      `).join("")}
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
+      ${stats.map(s=>`
+        <div class="bg-white border rounded-2xl p-4">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-br ${s.color} grid place-items-center text-xl text-white mb-2">${s.icon}</div>
+          <div class="text-2xl font-extrabold">${s.value}</div>
+          <div class="text-xs text-gray-500">${s.label}</div>
+        </div>`).join("")}
     </div>
 
-    <!-- TABS -->
     <div class="flex gap-2 mb-6 border-b border-gray-200 overflow-x-auto">
-      <button data-tab="platforms" class="admin-tab px-4 py-3 font-semibold text-sm border-b-2 border-orange-500 text-orange-600 whitespace-nowrap">🧩 Platforms</button>
+      <button data-tab="platforms"  class="admin-tab px-4 py-3 font-semibold text-sm border-b-2 border-orange-500 text-orange-600 whitespace-nowrap">🧩 Platforms</button>
       <button data-tab="categories" class="admin-tab px-4 py-3 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-800 whitespace-nowrap">📂 Categories</button>
-      <button data-tab="audit" class="admin-tab px-4 py-3 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-800 whitespace-nowrap">📝 Audit Log</button>
+      <button data-tab="versions"   class="admin-tab px-4 py-3 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-800 whitespace-nowrap">📜 Versions</button>
+      <button data-tab="audit"      class="admin-tab px-4 py-3 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-800 whitespace-nowrap">📝 Audit Log</button>
     </div>
 
-    <div id="adminTabContent">
-      ${adminTabPlatforms()}
-    </div>
+    <div id="adminTabContent">${adminTabPlatforms()}</div>
   </div>
   ${footer()}`;
 }
 
-function adminTabPlatforms() {
+function adminTabPlatforms(){
   return `
   <div class="bg-white border rounded-2xl p-6">
     <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
       <h2 class="font-bold text-xl">All Platforms</h2>
       <button data-action="new-platform" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-5 py-2.5 rounded-lg text-sm">+ New Platform</button>
     </div>
-    ${state.platforms.length === 0
-      ? `<div class="text-center py-16 text-gray-500">
-           <div class="text-5xl mb-3">📦</div>
-           <p>No platforms yet. Click "New Platform" to add one.</p>
-         </div>`
-      : `<div class="overflow-x-auto">
-          <table class="w-full text-sm">
-            <thead class="bg-gray-50 text-left text-gray-600">
-              <tr>
-                <th class="p-3 font-semibold">Icon</th>
-                <th class="p-3 font-semibold">Name</th>
-                <th class="p-3 font-semibold">Slug</th>
-                <th class="p-3 font-semibold">Category</th>
-                <th class="p-3 font-semibold">Status</th>
-                <th class="p-3 font-semibold text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${state.platforms.map(p => `
-                <tr class="border-t border-gray-100 hover:bg-gray-50">
-                  <td class="p-3 text-2xl">${esc(p.icon || "🧩")}</td>
-                  <td class="p-3 font-semibold">${esc(p.name)}</td>
-                  <td class="p-3 text-gray-500 font-mono text-xs">/${esc(p.slug)}</td>
-                  <td class="p-3">${esc(p.categoryName || p.categoryId || "—")}</td>
-                  <td class="p-3">
-                    <span class="text-xs font-bold px-2 py-1 rounded
-                      ${p.status === 'LIVE' ? 'bg-emerald-100 text-emerald-700'
-                        : p.status === 'SUSPENDED' ? 'bg-red-100 text-red-700'
-                        : 'bg-yellow-100 text-yellow-700'}">${esc(p.status || 'LIVE')}</span>
-                  </td>
-                  <td class="p-3 text-right whitespace-nowrap">
-                    <a href="#/${esc(p.slug)}" class="text-blue-600 hover:underline text-xs font-semibold mr-3">View</a>
-                    <button data-action="edit-platform" data-id="${p.id}" class="text-orange-600 hover:underline text-xs font-semibold mr-3">Edit</button>
-                    <button data-action="delete-platform" data-id="${p.id}" class="text-red-600 hover:underline text-xs font-semibold">Delete</button>
-                  </td>
-                </tr>
-              `).join("")}
-            </tbody>
-          </table>
-        </div>`}
+    ${state.platforms.length===0
+      ? `<div class="text-center py-16 text-gray-500"><div class="text-5xl mb-3">📦</div><p>No platforms yet.</p></div>`
+      : `<div class="overflow-x-auto"><table class="w-full text-sm">
+          <thead class="bg-gray-50 text-left text-gray-600">
+            <tr>
+              <th class="p-3">Icon</th><th class="p-3">Name</th><th class="p-3">Slug</th>
+              <th class="p-3">Category</th><th class="p-3">Version</th><th class="p-3">Status</th><th class="p-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${state.platforms.map(p=>{
+              const liveVer = state.versions.find(v=>v.platformId===p.id && v.status==="LIVE");
+              return `
+              <tr class="border-t border-gray-100 hover:bg-gray-50">
+                <td class="p-3 text-2xl">${esc(p.icon||"🧩")}</td>
+                <td class="p-3 font-semibold">${esc(p.name)}</td>
+                <td class="p-3 text-gray-500 font-mono text-xs">/${esc(p.slug)}</td>
+                <td class="p-3">${esc(p.categoryName||"—")}</td>
+                <td class="p-3 font-mono text-xs font-bold">${esc(liveVer?.versionNumber || p.currentVersion || "—")}</td>
+                <td class="p-3"><span class="text-xs font-bold px-2 py-1 rounded ${p.status==='LIVE'?'bg-emerald-100 text-emerald-700':p.status==='SUSPENDED'?'bg-red-100 text-red-700':'bg-yellow-100 text-yellow-700'}">${esc(p.status||'LIVE')}</span></td>
+                <td class="p-3 text-right whitespace-nowrap">
+                  <a href="#/${esc(p.slug)}" class="text-blue-600 hover:underline text-xs font-semibold mr-3">View</a>
+                  <button data-action="edit-platform" data-id="${p.id}" class="text-orange-600 hover:underline text-xs font-semibold mr-3">Edit</button>
+                  <button data-action="delete-platform" data-id="${p.id}" class="text-red-600 hover:underline text-xs font-semibold">Delete</button>
+                </td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table></div>`}
   </div>`;
 }
 
-function adminTabCategories() {
+function adminTabCategories(){
   return `
   <div class="bg-white border rounded-2xl p-6">
     <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
       <h2 class="font-bold text-xl">All Categories</h2>
       <button data-action="new-category" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-5 py-2.5 rounded-lg text-sm">+ New Category</button>
     </div>
-    ${state.categories.length === 0
-      ? `<div class="text-center py-16 text-gray-500">
-           <div class="text-5xl mb-3">📂</div>
-           <p>No categories yet.</p>
-         </div>`
+    ${state.categories.length===0
+      ? `<div class="text-center py-16 text-gray-500"><div class="text-5xl mb-3">📂</div><p>No categories yet.</p></div>`
       : `<div class="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-          ${state.categories.map(c => `
-            <div class="border border-gray-200 rounded-xl p-4 flex items-center justify-between hover:shadow-md transition">
+          ${state.categories.map(c=>`
+            <div class="border rounded-xl p-4 flex items-center justify-between hover:shadow-md transition">
               <div class="flex items-center gap-3">
-                <span class="text-3xl">${esc(c.icon || "📦")}</span>
-                <div>
-                  <div class="font-semibold text-sm">${esc(c.name)}</div>
-                  <div class="text-xs text-gray-500">Order: ${esc(c.order ?? "—")}</div>
-                </div>
+                <span class="text-3xl">${esc(c.icon||"📦")}</span>
+                <div><div class="font-semibold text-sm">${esc(c.name)}</div><div class="text-xs text-gray-500">Order: ${esc(c.order??"—")}</div></div>
               </div>
               <div class="flex gap-2">
-                <button data-action="edit-category" data-id="${c.id}" class="text-orange-600 hover:bg-orange-50 rounded-lg px-2 py-1 text-xs font-semibold">Edit</button>
-                <button data-action="delete-category" data-id="${c.id}" class="text-red-600 hover:bg-red-50 rounded-lg px-2 py-1 text-xs font-semibold">Del</button>
+                <button data-action="edit-category" data-id="${c.id}" class="text-orange-600 text-xs font-semibold">Edit</button>
+                <button data-action="delete-category" data-id="${c.id}" class="text-red-600 text-xs font-semibold">Del</button>
               </div>
-            </div>
-          `).join("")}
+            </div>`).join("")}
         </div>`}
   </div>`;
 }
 
-function adminTabAudit() {
+function adminTabVersions(){
+  const statusColor = {
+    LIVE:"bg-emerald-100 text-emerald-700", DRAFT:"bg-yellow-100 text-yellow-700",
+    TESTING:"bg-blue-100 text-blue-700", APPROVED:"bg-purple-100 text-purple-700",
+    ROLLED_BACK:"bg-red-100 text-red-700", ARCHIVED:"bg-gray-100 text-gray-600"
+  };
+  const sorted = [...state.versions].sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+
   return `
   <div class="bg-white border rounded-2xl p-6">
-    <h2 class="font-bold text-xl mb-4">📝 Audit Log</h2>
-    <p class="text-sm text-gray-500 mb-4">
-      এই মুহূর্তে Demo Mode-এ audit log দেখানো হচ্ছে না। Firebase যোগ করার পরে এখানে সব action-এর লগ দেখাবে (কে কোন প্ল্যাটফর্ম কখন তৈরি/এডিট/ডিলিট করেছে)।
-    </p>
-    <div class="bg-gray-50 border rounded-lg p-6 text-center text-gray-400 text-sm">
-      No logs available yet.
+    <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+      <h2 class="font-bold text-xl">All Versions</h2>
+      <button data-action="new-version" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-5 py-2.5 rounded-lg text-sm">+ Register New Version</button>
     </div>
+    ${sorted.length===0
+      ? `<div class="text-center py-16 text-gray-500"><div class="text-5xl mb-3">📜</div><p>No versions yet. Click "Register New Version".</p></div>`
+      : `<div class="overflow-x-auto"><table class="w-full text-sm">
+          <thead class="bg-gray-50 text-left text-gray-600">
+            <tr>
+              <th class="p-3">Platform</th><th class="p-3">Version</th>
+              <th class="p-3">Notes</th><th class="p-3">Status</th>
+              <th class="p-3">Created</th><th class="p-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${sorted.map(v=>{
+              const plat = state.platforms.find(p=>p.id===v.platformId);
+              return `
+              <tr class="border-t border-gray-100 hover:bg-gray-50">
+                <td class="p-3 font-semibold">${plat?esc(plat.icon+" "+plat.name):"—"}</td>
+                <td class="p-3 font-mono font-bold">${esc(v.versionNumber)}</td>
+                <td class="p-3 text-gray-600 max-w-xs truncate">${esc(v.releaseNotes||"—")}</td>
+                <td class="p-3"><span class="text-xs font-bold px-2 py-1 rounded ${statusColor[v.status]||'bg-gray-100'}">${esc(v.status)}</span></td>
+                <td class="p-3 text-gray-500 text-xs">${fmtDate(v.createdAt)}</td>
+                <td class="p-3 text-right whitespace-nowrap">
+                  ${v.status==="DRAFT"    ? `<button data-action="ver-test"    data-id="${v.id}" class="text-blue-600 text-xs font-semibold mr-2">→ Testing</button>` : ""}
+                  ${v.status==="TESTING"  ? `<button data-action="ver-approve" data-id="${v.id}" class="text-purple-600 text-xs font-semibold mr-2">✓ Approve</button>` : ""}
+                  ${v.status==="APPROVED" ? `<button data-action="ver-publish" data-id="${v.id}" class="text-emerald-600 text-xs font-semibold mr-2">▶ Publish</button>` : ""}
+                  ${v.status==="LIVE"     ? `<button data-action="ver-rollback" data-id="${v.id}" class="text-red-600 text-xs font-semibold mr-2">↺ Rollback</button>` : ""}
+                  <button data-action="delete-version" data-id="${v.id}" class="text-gray-400 text-xs font-semibold">Del</button>
+                </td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table></div>`}
   </div>`;
 }
 
-/* =======================  MODALS  ======================= */
-function openPlatformModal(platform = null) {
-  const editing = !!platform;
-  const p = platform || { name: "", slug: "", desc: "", icon: "🧩", color: "from-orange-500 to-red-500", status: "LIVE", type: "PUBLIC_PRODUCT", categoryId: "" };
-  const categoryOptions = state.categories.map(c => `<option value="${c.id}" ${p.categoryId === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("");
-  const colorOptions = [
-    "from-orange-500 to-red-500", "from-blue-600 to-indigo-600", "from-emerald-500 to-teal-600",
-    "from-purple-600 to-violet-600", "from-pink-500 to-rose-600", "from-cyan-500 to-blue-600",
-    "from-yellow-500 to-orange-600", "from-gray-700 to-gray-900"
-  ];
+function adminTabAudit(){
+  return `
+  <div class="bg-white border rounded-2xl p-6">
+    <h2 class="font-bold text-xl mb-4">📝 Audit Log</h2>
+    <p class="text-sm text-gray-500">Firebase-এ auditLogs collection-এ সেভ হচ্ছে। Console → Firestore → auditLogs দেখুন।</p>
+  </div>`;
+}
 
-  const html = `
+/* ===== PLATFORM MODAL ===== */
+function openPlatformModal(platform=null){
+  const editing = !!platform;
+  const p = platform || { name:"", slug:"", desc:"", icon:"🧩", color:"from-orange-500 to-red-500", status:"LIVE", type:"PUBLIC_PRODUCT", categoryId:"" };
+  const catOpts = state.categories.map(c=>`<option value="${c.id}" ${p.categoryId===c.id?"selected":""}>${esc(c.name)}</option>`).join("");
+  const colors = ["from-orange-500 to-red-500","from-blue-600 to-indigo-600","from-emerald-500 to-teal-600","from-purple-600 to-violet-600","from-pink-500 to-rose-600","from-cyan-500 to-blue-600","from-yellow-500 to-orange-600","from-gray-700 to-gray-900"];
+
+  document.body.insertAdjacentHTML("beforeend", `
   <div id="modalWrap" class="fixed inset-0 modal-bg z-[100] grid place-items-center p-4 overflow-y-auto">
     <div class="bg-white rounded-2xl w-full max-w-2xl p-6 md:p-8 relative my-8 fade-in">
-      <button data-close class="absolute top-4 right-4 text-gray-400 text-2xl leading-none hover:text-gray-800">×</button>
-      <h2 class="text-2xl font-bold mb-1">${editing ? "Edit Platform" : "New Platform"}</h2>
-      <p class="text-sm text-gray-500 mb-6">${editing ? "Update the platform details below." : "Add a new platform to oraXpress."}</p>
-
+      <button data-close class="absolute top-4 right-4 text-gray-400 text-2xl">×</button>
+      <h2 class="text-2xl font-bold mb-1">${editing?"Edit Platform":"New Platform"}</h2>
+      <p class="text-sm text-gray-500 mb-6">${editing?"Update platform details.":"Add a new platform."}</p>
       <div class="grid md:grid-cols-2 gap-4">
         <div class="md:col-span-2">
-          <label class="block text-sm font-semibold mb-1">Platform Name *</label>
-          <input id="f-name" value="${esc(p.name)}" placeholder="e.g. Hisab AI" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500"/>
+          <label class="block text-sm font-semibold mb-1">Name *</label>
+          <input id="f-name" value="${esc(p.name)}" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500"/>
         </div>
-
         <div>
-          <label class="block text-sm font-semibold mb-1">Slug (URL) *</label>
-          <input id="f-slug" value="${esc(p.slug)}" placeholder="e.g. hisabai" class="w-full border rounded-lg px-4 py-2.5 font-mono text-sm focus:outline-none focus:border-orange-500"/>
-          <p class="text-[11px] text-gray-500 mt-1">URL হবে: yoursite.com/#/<b id="slugPreview">${esc(p.slug || "slug")}</b></p>
+          <label class="block text-sm font-semibold mb-1">Slug *</label>
+          <input id="f-slug" value="${esc(p.slug)}" class="w-full border rounded-lg px-4 py-2.5 font-mono text-sm focus:outline-none focus:border-orange-500"/>
         </div>
-
         <div>
           <label class="block text-sm font-semibold mb-1">Category</label>
           <select id="f-categoryId" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500">
-            <option value="">— Select —</option>
-            ${categoryOptions}
+            <option value="">— Select —</option>${catOpts}
           </select>
         </div>
-
         <div class="md:col-span-2">
           <label class="block text-sm font-semibold mb-1">Description</label>
-          <textarea id="f-desc" rows="3" placeholder="Short description..." class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500">${esc(p.desc || "")}</textarea>
+          <textarea id="f-desc" rows="3" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500">${esc(p.desc||"")}</textarea>
         </div>
-
         <div>
           <label class="block text-sm font-semibold mb-1">Icon (emoji)</label>
-          <input id="f-icon" value="${esc(p.icon || "🧩")}" class="w-full border rounded-lg px-4 py-2.5 text-2xl focus:outline-none focus:border-orange-500" maxlength="4"/>
+          <input id="f-icon" value="${esc(p.icon||"🧩")}" maxlength="4" class="w-full border rounded-lg px-4 py-2.5 text-2xl focus:outline-none focus:border-orange-500"/>
         </div>
-
         <div>
           <label class="block text-sm font-semibold mb-1">Status</label>
           <select id="f-status" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500">
-            <option value="LIVE" ${p.status === "LIVE" ? "selected" : ""}>LIVE</option>
-            <option value="DRAFT" ${p.status === "DRAFT" ? "selected" : ""}>DRAFT</option>
-            <option value="TESTING" ${p.status === "TESTING" ? "selected" : ""}>TESTING</option>
-            <option value="SUSPENDED" ${p.status === "SUSPENDED" ? "selected" : ""}>SUSPENDED</option>
-            <option value="ARCHIVED" ${p.status === "ARCHIVED" ? "selected" : ""}>ARCHIVED</option>
+            ${["LIVE","DRAFT","TESTING","SUSPENDED","ARCHIVED"].map(s=>`<option value="${s}" ${p.status===s?"selected":""}>${s}</option>`).join("")}
           </select>
         </div>
-
         <div>
           <label class="block text-sm font-semibold mb-1">Type</label>
           <select id="f-type" class="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500">
-            <option value="PUBLIC_PRODUCT" ${p.type === "PUBLIC_PRODUCT" ? "selected" : ""}>PUBLIC_PRODUCT</option>
-            <option value="PRIVATE_CUSTOM" ${p.type === "PRIVATE_CUSTOM" ? "selected" : ""}>PRIVATE_CUSTOM</option>
+            <option value="PUBLIC_PRODUCT" ${p.type==="PUBLIC_PRODUCT"?"selected":""}>PUBLIC_PRODUCT</option>
+            <option value="PRIVATE_CUSTOM" ${p.type==="PRIVATE_CUSTOM"?"selected":""}>PRIVATE_CUSTOM</option>
           </select>
         </div>
-
         <div class="md:col-span-2">
           <label class="block text-sm font-semibold mb-1">Color Theme</label>
           <div class="flex flex-wrap gap-2">
-            ${colorOptions.map(c => `
-              <button type="button" data-color="${c}" class="color-choice w-12 h-12 rounded-xl bg-gradient-to-br ${c} border-4 ${p.color === c ? 'border-orange-400' : 'border-transparent'}"></button>
-            `).join("")}
+            ${colors.map(c=>`<button type="button" data-color="${c}" class="color-choice w-11 h-11 rounded-xl bg-gradient-to-br ${c} border-4 ${p.color===c?"border-orange-400":"border-transparent"}"></button>`).join("")}
           </div>
-          <input type="hidden" id="f-color" value="${esc(p.color || colorOptions[0])}"/>
+          <input type="hidden" id="f-color" value="${esc(p.color||colors[0])}"/>
         </div>
       </div>
-
       <div id="formMsg" class="text-sm mt-4"></div>
-
       <div class="flex justify-end gap-3 mt-6 pt-5 border-t">
-        <button data-close class="px-5 py-2.5 rounded-lg border font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
-        <button id="savePlatformBtn" class="px-5 py-2.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white font-bold">
-          ${editing ? "Save Changes" : "Create Platform"}
-        </button>
+        <button data-close class="px-5 py-2.5 rounded-lg border font-semibold">Cancel</button>
+        <button id="saveBtn" class="px-5 py-2.5 rounded-lg bg-orange-500 text-white font-bold">${editing?"Save Changes":"Create Platform"}</button>
       </div>
     </div>
-  </div>`;
-
-  document.body.insertAdjacentHTML("beforeend", html);
+  </div>`);
   const wrap = document.getElementById("modalWrap");
-
-  // Slug auto-preview
-  const slugInput = wrap.querySelector("#f-slug");
-  const nameInput = wrap.querySelector("#f-name");
-  const slugPrev  = wrap.querySelector("#slugPreview");
-  nameInput.addEventListener("input", () => {
-    if (!editing && !slugInput.value) slugInput.value = slugify(nameInput.value);
-    slugPrev.textContent = slugInput.value || "slug";
-  });
-  slugInput.addEventListener("input", () => { slugPrev.textContent = slugInput.value || "slug"; });
-
-  // Color pick
-  wrap.querySelectorAll(".color-choice").forEach(btn => {
-    btn.addEventListener("click", () => {
-      wrap.querySelectorAll(".color-choice").forEach(b => b.classList.remove("border-orange-400"));
-      btn.classList.add("border-orange-400");
-      wrap.querySelector("#f-color").value = btn.dataset.color;
-    });
-  });
-
-  // Close
-  wrap.querySelectorAll("[data-close]").forEach(b => b.onclick = () => wrap.remove());
-
-  // Save
-  wrap.querySelector("#savePlatformBtn").onclick = async () => {
+  wrap.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>wrap.remove());
+  const nameI = wrap.querySelector("#f-name"), slugI = wrap.querySelector("#f-slug");
+  nameI.addEventListener("input", ()=>{ if(!editing && !slugI.value) slugI.value = slugify(nameI.value); });
+  wrap.querySelectorAll(".color-choice").forEach(btn=>btn.addEventListener("click", ()=>{
+    wrap.querySelectorAll(".color-choice").forEach(b=>b.classList.remove("border-orange-400"));
+    btn.classList.add("border-orange-400");
+    wrap.querySelector("#f-color").value = btn.dataset.color;
+  }));
+  wrap.querySelector("#saveBtn").onclick = async ()=>{
     const name = wrap.querySelector("#f-name").value.trim();
     const slug = wrap.querySelector("#f-slug").value.trim() || slugify(name);
     const desc = wrap.querySelector("#f-desc").value.trim();
@@ -685,295 +636,358 @@ function openPlatformModal(platform = null) {
     const type = wrap.querySelector("#f-type").value;
     const color = wrap.querySelector("#f-color").value;
     const categoryId = wrap.querySelector("#f-categoryId").value;
-    const categoryName = state.categories.find(c => c.id === categoryId)?.name || "";
-
+    const categoryName = state.categories.find(c=>c.id===categoryId)?.name || "";
     const msg = wrap.querySelector("#formMsg");
-    if (!name) { msg.className = "text-sm mt-4 text-red-600"; msg.textContent = "Name is required."; return; }
-    if (!slug) { msg.className = "text-sm mt-4 text-red-600"; msg.textContent = "Slug is required."; return; }
-    // unique slug
-    if (state.platforms.some(x => x.slug === slug && x.id !== p.id)) {
-      msg.className = "text-sm mt-4 text-red-600"; msg.textContent = "This slug is already used."; return;
-    }
-
+    if(!name){ msg.className="text-sm mt-4 text-red-600"; msg.textContent="Name required"; return; }
+    if(!slug){ msg.className="text-sm mt-4 text-red-600"; msg.textContent="Slug required"; return; }
+    if(state.platforms.some(x=>x.slug===slug && x.id!==p.id)){ msg.className="text-sm mt-4 text-red-600"; msg.textContent="Slug already used"; return; }
     const data = { name, slug, desc, icon, status, type, color, categoryId, categoryName };
-
-    try {
-      wrap.querySelector("#savePlatformBtn").disabled = true;
-      wrap.querySelector("#savePlatformBtn").textContent = "Saving...";
-      if (editing) await updatePlatform(p.id, data);
-      else await createPlatform(data);
-
-      await reloadData();
-      wrap.remove();
-      render();
-      toast("✅ Platform saved successfully");
-    } catch (e) {
-      msg.className = "text-sm mt-4 text-red-600";
-      msg.textContent = "Error: " + e.message;
-      wrap.querySelector("#savePlatformBtn").disabled = false;
-      wrap.querySelector("#savePlatformBtn").textContent = "Save";
-    }
+    try{
+      wrap.querySelector("#saveBtn").disabled = true;
+      if(editing){
+        await updatePlatform(p.id, data);
+        await logAction("PLATFORM_UPDATED","platform",p.id,{name});
+      } else {
+        const newId = await createPlatform(data);
+        // অটো প্রথম ভার্সন v1.0.0 তৈরি
+        await createVersion({
+          platformId: newId, versionNumber:"v1.0.0",
+          releaseNotes:"Initial release", status:"LIVE", buildRef:"",
+          createdBy: state.user?.email || "system",
+          publishedAt: serverTimestamp()
+        });
+        await updatePlatform(newId, { currentVersion:"v1.0.0" });
+        await logAction("PLATFORM_CREATED","platform",newId,{name});
+      }
+      await reloadData(); wrap.remove(); render();
+      toast("✅ Platform saved");
+    }catch(e){ msg.className="text-sm mt-4 text-red-600"; msg.textContent="Error: "+e.message; wrap.querySelector("#saveBtn").disabled=false; }
   };
 }
 
-function openCategoryModal(cat = null) {
+/* ===== CATEGORY MODAL ===== */
+function openCategoryModal(cat=null){
   const editing = !!cat;
-  const c = cat || { name: "", icon: "📦", order: state.categories.length + 1 };
-
-  const html = `
+  const c = cat || { name:"", icon:"📦", order:state.categories.length+1 };
+  document.body.insertAdjacentHTML("beforeend", `
   <div id="modalWrap" class="fixed inset-0 modal-bg z-[100] grid place-items-center p-4 overflow-y-auto">
     <div class="bg-white rounded-2xl w-full max-w-md p-6 md:p-8 relative fade-in">
-      <button data-close class="absolute top-4 right-4 text-gray-400 text-2xl leading-none hover:text-gray-800">×</button>
-      <h2 class="text-2xl font-bold mb-1">${editing ? "Edit Category" : "New Category"}</h2>
-      <p class="text-sm text-gray-500 mb-6">${editing ? "Update category details." : "Add a new product category."}</p>
-
+      <button data-close class="absolute top-4 right-4 text-gray-400 text-2xl">×</button>
+      <h2 class="text-2xl font-bold mb-1">${editing?"Edit Category":"New Category"}</h2>
+      <p class="text-sm text-gray-500 mb-6">${editing?"Update details.":"Add a new category."}</p>
       <label class="block text-sm font-semibold mb-1">Name *</label>
-      <input id="c-name" value="${esc(c.name)}" placeholder="e.g. Electronics" class="w-full border rounded-lg px-4 py-2.5 mb-4 focus:outline-none focus:border-orange-500"/>
-
+      <input id="c-name" value="${esc(c.name)}" class="w-full border rounded-lg px-4 py-2.5 mb-4 focus:outline-none focus:border-orange-500"/>
       <label class="block text-sm font-semibold mb-1">Icon (emoji)</label>
-      <input id="c-icon" value="${esc(c.icon || "📦")}" maxlength="4" class="w-full border rounded-lg px-4 py-2.5 text-2xl mb-4 focus:outline-none focus:border-orange-500"/>
-
-      <label class="block text-sm font-semibold mb-1">Order (0–999)</label>
-      <input id="c-order" type="number" value="${esc(c.order ?? 0)}" class="w-full border rounded-lg px-4 py-2.5 mb-4 focus:outline-none focus:border-orange-500"/>
-
+      <input id="c-icon" value="${esc(c.icon)}" maxlength="4" class="w-full border rounded-lg px-4 py-2.5 text-2xl mb-4 focus:outline-none focus:border-orange-500"/>
+      <label class="block text-sm font-semibold mb-1">Order</label>
+      <input id="c-order" type="number" value="${esc(c.order??0)}" class="w-full border rounded-lg px-4 py-2.5 mb-4 focus:outline-none focus:border-orange-500"/>
       <div id="formMsg" class="text-sm"></div>
-
       <div class="flex justify-end gap-3 mt-6 pt-5 border-t">
-        <button data-close class="px-5 py-2.5 rounded-lg border font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
-        <button id="saveCatBtn" class="px-5 py-2.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white font-bold">
-          ${editing ? "Save Changes" : "Create Category"}
-        </button>
+        <button data-close class="px-5 py-2.5 rounded-lg border font-semibold">Cancel</button>
+        <button id="saveBtn" class="px-5 py-2.5 rounded-lg bg-orange-500 text-white font-bold">${editing?"Save":"Create"}</button>
       </div>
     </div>
-  </div>`;
-
-  document.body.insertAdjacentHTML("beforeend", html);
+  </div>`);
   const wrap = document.getElementById("modalWrap");
-  wrap.querySelectorAll("[data-close]").forEach(b => b.onclick = () => wrap.remove());
-
-  wrap.querySelector("#saveCatBtn").onclick = async () => {
+  wrap.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>wrap.remove());
+  wrap.querySelector("#saveBtn").onclick = async ()=>{
     const name = wrap.querySelector("#c-name").value.trim();
     const icon = wrap.querySelector("#c-icon").value.trim() || "📦";
     const order = parseInt(wrap.querySelector("#c-order").value) || 0;
     const msg = wrap.querySelector("#formMsg");
-
-    if (!name) { msg.className = "text-sm text-red-600"; msg.textContent = "Name is required."; return; }
-
-    try {
-      if (editing) await updateCategory(c.id, { name, icon, order });
+    if(!name){ msg.className="text-sm text-red-600"; msg.textContent="Name required"; return; }
+    try{
+      if(editing) await updateCategory(c.id, { name, icon, order });
       else await createCategory({ name, icon, order });
-
-      await reloadData();
-      wrap.remove();
-      render();
+      await reloadData(); wrap.remove(); render();
       toast("✅ Category saved");
-    } catch (e) {
-      msg.className = "text-sm text-red-600";
-      msg.textContent = "Error: " + e.message;
-    }
+    }catch(e){ msg.className="text-sm text-red-600"; msg.textContent="Error: "+e.message; }
   };
 }
 
-function confirmDelete(message, onConfirm) {
-  const html = `
+/* ===== VERSION MODAL ===== */
+function openVersionModal(platformId=null){
+  if (state.platforms.length===0){
+    toast("⚠️ আগে একটা Platform তৈরি করুন");
+    return;
+  }
+  const platOpts = state.platforms.map(p=>`<option value="${p.id}" ${platformId===p.id?"selected":""}>${esc(p.icon+" "+p.name)}</option>`).join("");
+  const firstPlat = platformId || state.platforms[0].id;
+  const existing = state.versions.filter(v=>v.platformId===firstPlat).map(v=>v.versionNumber);
+  const latest = existing.sort().reverse()[0] || "v1.0.0";
+  const suggested = bumpVersion(latest, "patch");
+
+  document.body.insertAdjacentHTML("beforeend", `
+  <div id="modalWrap" class="fixed inset-0 modal-bg z-[100] grid place-items-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl w-full max-w-lg p-6 md:p-8 relative my-8 fade-in">
+      <button data-close class="absolute top-4 right-4 text-gray-400 text-2xl">×</button>
+      <h2 class="text-2xl font-bold mb-1">Register New Version</h2>
+      <p class="text-sm text-gray-500 mb-6">নতুন ভার্সন যোগ করুন (পুরনো ভার্সন মুছবে না)</p>
+
+      <label class="block text-sm font-semibold mb-1">Platform *</label>
+      <select id="v-platformId" class="w-full border rounded-lg px-4 py-2.5 mb-4 focus:outline-none focus:border-orange-500">${platOpts}</select>
+
+      <label class="block text-sm font-semibold mb-1">Version Number *</label>
+      <div class="flex gap-2 mb-2">
+        <input id="v-versionNumber" value="${esc(suggested)}" class="flex-1 border rounded-lg px-4 py-2.5 font-mono focus:outline-none focus:border-orange-500"/>
+        <button type="button" id="bump-patch" class="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-xs font-semibold">+ Patch</button>
+        <button type="button" id="bump-minor" class="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-xs font-semibold">+ Minor</button>
+        <button type="button" id="bump-major" class="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-xs font-semibold">+ Major</button>
+      </div>
+
+      <label class="block text-sm font-semibold mb-1">Release Notes</label>
+      <textarea id="v-releaseNotes" rows="3" placeholder="What's new in this version..." class="w-full border rounded-lg px-4 py-2.5 mb-4 focus:outline-none focus:border-orange-500"></textarea>
+
+      <label class="block text-sm font-semibold mb-1">Build Reference (ঐচ্ছিক)</label>
+      <input id="v-buildRef" placeholder="URL or note from AI Studio / your build" class="w-full border rounded-lg px-4 py-2.5 mb-4 focus:outline-none focus:border-orange-500"/>
+
+      <label class="block text-sm font-semibold mb-1">Initial Status</label>
+      <select id="v-status" class="w-full border rounded-lg px-4 py-2.5 mb-4 focus:outline-none focus:border-orange-500">
+        <option value="DRAFT">DRAFT (এখনো তৈরি হয়নি)</option>
+        <option value="TESTING">TESTING (পরীক্ষা চলছে)</option>
+        <option value="APPROVED">APPROVED (অনুমোদিত, পাবলিশের জন্য প্রস্তুত)</option>
+        <option value="LIVE" selected>LIVE (এখনই চালু হবে)</option>
+      </select>
+
+      <div id="formMsg" class="text-sm"></div>
+
+      <div class="flex justify-end gap-3 mt-6 pt-5 border-t">
+        <button data-close class="px-5 py-2.5 rounded-lg border font-semibold">Cancel</button>
+        <button id="saveBtn" class="px-5 py-2.5 rounded-lg bg-orange-500 text-white font-bold">Register Version</button>
+      </div>
+    </div>
+  </div>`);
+  const wrap = document.getElementById("modalWrap");
+  const platSel = wrap.querySelector("#v-platformId");
+  const verInput = wrap.querySelector("#v-versionNumber");
+
+  function refreshSuggested(){
+    const list = state.versions.filter(v=>v.platformId===platSel.value).map(v=>v.versionNumber);
+    const latest = list.sort().reverse()[0] || "v1.0.0";
+    verInput.value = bumpVersion(latest, "patch");
+  }
+  platSel.addEventListener("change", refreshSuggested);
+  wrap.querySelector("#bump-patch").onclick = ()=> verInput.value = bumpVersion(verInput.value, "patch");
+  wrap.querySelector("#bump-minor").onclick = ()=> verInput.value = bumpVersion(verInput.value, "minor");
+  wrap.querySelector("#bump-major").onclick = ()=> verInput.value = bumpVersion(verInput.value, "major");
+  wrap.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>wrap.remove());
+
+  wrap.querySelector("#saveBtn").onclick = async ()=>{
+    const platformId = wrap.querySelector("#v-platformId").value;
+    const versionNumber = wrap.querySelector("#v-versionNumber").value.trim();
+    const releaseNotes = wrap.querySelector("#v-releaseNotes").value.trim();
+    const buildRef = wrap.querySelector("#v-buildRef").value.trim();
+    const status = wrap.querySelector("#v-status").value;
+    const msg = wrap.querySelector("#formMsg");
+
+    if(!versionNumber){ msg.className="text-sm text-red-600"; msg.textContent="Version number required"; return; }
+    if(state.versions.some(v=>v.platformId===platformId && v.versionNumber===versionNumber)){
+      msg.className="text-sm text-red-600"; msg.textContent="এই ভার্সন আগেই আছে"; return;
+    }
+
+    try{
+      wrap.querySelector("#saveBtn").disabled = true;
+      const data = {
+        platformId, versionNumber, releaseNotes, buildRef, status,
+        createdBy: state.user?.email || "system"
+      };
+      // যদি LIVE হয়, আগের LIVE গুলো ROLLED_BACK করি
+      if(status === "LIVE"){
+        const prevLive = state.versions.filter(v=>v.platformId===platformId && v.status==="LIVE");
+        for(const v of prevLive) await updateVersion(v.id, { status:"ROLLED_BACK" });
+        data.publishedAt = serverTimestamp();
+        data.publishedBy = state.user?.email || "system";
+        // platform-এ currentVersion আপডেট
+        await updatePlatform(platformId, { currentVersion: versionNumber });
+      }
+      const newId = await createVersion(data);
+      await logAction("VERSION_CREATED","platformVersion",newId,{platformId, versionNumber, status});
+      await reloadData(); wrap.remove(); render();
+      toast("✅ Version registered");
+    }catch(e){ msg.className="text-sm text-red-600"; msg.textContent="Error: "+e.message; wrap.querySelector("#saveBtn").disabled=false; }
+  };
+}
+
+/* ===== CONFIRM ===== */
+function confirmDelete(message, onConfirm){
+  document.body.insertAdjacentHTML("beforeend", `
   <div id="confirmWrap" class="fixed inset-0 modal-bg z-[100] grid place-items-center p-4">
     <div class="bg-white rounded-2xl w-full max-w-md p-6 relative fade-in">
       <div class="text-5xl mb-3 text-center">⚠️</div>
       <h2 class="text-xl font-bold mb-2 text-center">Are you sure?</h2>
       <p class="text-gray-600 text-sm text-center mb-6">${esc(message)}</p>
       <div class="flex gap-3">
-        <button data-close class="flex-1 px-5 py-3 rounded-lg border font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
-        <button id="confirmYes" class="flex-1 px-5 py-3 rounded-lg bg-red-500 hover:bg-red-600 text-white font-bold">Yes, Delete</button>
+        <button data-close class="flex-1 px-5 py-3 rounded-lg border font-semibold">Cancel</button>
+        <button id="confirmYes" class="flex-1 px-5 py-3 rounded-lg bg-red-500 text-white font-bold">Yes, Delete</button>
       </div>
     </div>
-  </div>`;
-  document.body.insertAdjacentHTML("beforeend", html);
+  </div>`);
   const wrap = document.getElementById("confirmWrap");
-  wrap.querySelector("[data-close]").onclick = () => wrap.remove();
-  wrap.querySelector("#confirmYes").onclick = async () => {
-    wrap.remove();
-    await onConfirm();
-  };
+  wrap.querySelector("[data-close]").onclick = ()=>wrap.remove();
+  wrap.querySelector("#confirmYes").onclick = async ()=>{ wrap.remove(); await onConfirm(); };
 }
 
-/* =======================  TOAST  ======================= */
-function toast(msg) {
+/* ===== TOAST ===== */
+function toast(msg){
   const t = document.createElement("div");
   t.className = "fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-lg z-[200] fade-in text-sm font-semibold";
   t.textContent = msg;
   document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2500);
+  setTimeout(()=>t.remove(), 2500);
 }
 
-/* =======================  AUTH MODAL  ======================= */
-function openAuth(mode = "login") {
-  const existing = document.getElementById("authModal");
-  if (existing) existing.remove();
-  const html = `
+/* ===== AUTH ===== */
+function openAuth(mode="login"){
+  const e = document.getElementById("authModal"); if(e) e.remove();
+  document.body.insertAdjacentHTML("beforeend", `
   <div id="authModal" class="fixed inset-0 modal-bg z-[100] grid place-items-center p-4">
     <div class="bg-white rounded-2xl w-full max-w-md p-8 relative fade-in">
       <button data-close class="absolute top-4 right-4 text-gray-400 text-2xl">×</button>
-      <h2 class="text-2xl font-bold mb-1">${mode === "login" ? "Welcome Back" : "Create Account"}</h2>
+      <h2 class="text-2xl font-bold mb-1">${mode==="login"?"Welcome Back":"Create Account"}</h2>
       <p class="text-sm text-gray-500 mb-6">Sign in to oraXpress</p>
       <input id="authEmail" type="email" placeholder="Email" class="w-full border rounded-lg px-4 py-3 mb-3 focus:outline-none focus:border-orange-500"/>
       <input id="authPass" type="password" placeholder="Password (6+ chars)" class="w-full border rounded-lg px-4 py-3 mb-4 focus:outline-none focus:border-orange-500"/>
-      <button id="authSubmit" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-lg">
-        ${mode === "login" ? "Sign In" : "Register"}
-      </button>
+      <button id="authSubmit" class="w-full bg-orange-500 text-white font-bold py-3 rounded-lg">${mode==="login"?"Sign In":"Register"}</button>
       <div id="authMsg" class="text-sm mt-3 text-center"></div>
     </div>
-  </div>`;
-  document.body.insertAdjacentHTML("beforeend", html);
+  </div>`);
   const wrap = document.getElementById("authModal");
-  wrap.querySelector("[data-close]").onclick = () => wrap.remove();
-  wrap.querySelector("#authSubmit").onclick = async () => {
+  wrap.querySelector("[data-close]").onclick = ()=>wrap.remove();
+  wrap.querySelector("#authSubmit").onclick = async ()=>{
     const email = wrap.querySelector("#authEmail").value.trim();
     const pass = wrap.querySelector("#authPass").value;
     const msg = wrap.querySelector("#authMsg");
-    if (state.demoMode) {
-      msg.className = "text-sm mt-3 text-center text-orange-600";
-      msg.textContent = "Demo Mode: Firebase configure করলে login কাজ করবে।";
-      return;
-    }
-    try {
-      if (mode === "login") await signInWithEmailAndPassword(auth, email, pass);
+    if(state.demoMode){ msg.className="text-sm mt-3 text-center text-orange-600"; msg.textContent="Demo Mode: Firebase config দিন।"; return; }
+    try{
+      if(mode==="login") await signInWithEmailAndPassword(auth, email, pass);
       else await createUserWithEmailAndPassword(auth, email, pass);
-      wrap.remove();
-      toast("✅ Signed in");
-    } catch (e) {
-      msg.className = "text-sm mt-3 text-center text-red-500";
-      msg.textContent = e.message;
-    }
+      wrap.remove(); toast("✅ Signed in");
+    }catch(err){ msg.className="text-sm mt-3 text-center text-red-500"; msg.textContent=err.message; }
   };
 }
 
-/* =======================  ROUTER  ======================= */
-function render() {
+/* ===== ROUTER ===== */
+function render(){
   const root = document.getElementById("app");
   const route = state.route;
-
-  if (route === "/admin") { root.innerHTML = renderAdmin(); return; }
-
+  if (route === "/admin"){ root.innerHTML = renderAdmin(); return; }
   const slug = route.startsWith("/") ? route.slice(1) : route;
-  const platform = state.platforms.find(p => p.slug === slug);
-  if (platform) { root.innerHTML = renderPlatformPage(platform); return; }
-
+  const platform = state.platforms.find(p=>p.slug===slug);
+  if (platform){ root.innerHTML = renderPlatformPage(platform); return; }
   root.innerHTML = renderHome();
 }
 
-/* =======================  GLOBAL EVENTS  ======================= */
-document.addEventListener("click", async (e) => {
+/* ===== VERSION STATUS ACTIONS ===== */
+async function versionAction(id, newStatus, actionName){
+  try{
+    const v = state.versions.find(x=>x.id===id);
+    if(!v) return;
+    const patch = { status: newStatus };
+    if (newStatus === "LIVE"){
+      // আগের LIVE গুলো rollback
+      const prev = state.versions.filter(x=>x.platformId===v.platformId && x.status==="LIVE");
+      for(const pv of prev) await updateVersion(pv.id, { status:"ROLLED_BACK" });
+      patch.publishedAt = serverTimestamp();
+      patch.publishedBy = state.user?.email || "system";
+      await updatePlatform(v.platformId, { currentVersion: v.versionNumber });
+    }
+    await updateVersion(id, patch);
+    await logAction(actionName, "platformVersion", id, { version:v.versionNumber, status:newStatus });
+    await reloadData(); render();
+    toast("✅ " + actionName.replace("_"," ").toLowerCase());
+  }catch(e){ toast("❌ " + e.message); }
+}
+
+/* ===== GLOBAL CLICK ===== */
+document.addEventListener("click", async (e)=>{
   const t = e.target.closest("[data-action]");
-  if (t) {
+  if (t){
     const a = t.dataset.action;
-    if (a === "open-auth") return openAuth("login");
-    if (a === "open-auth-register") return openAuth("register");
-    if (a === "logout") { if (auth) await signOut(auth); return; }
-    if (a === "go-admin") { location.hash = "/admin"; return; }
-    if (a === "new-platform") return openPlatformModal();
-    if (a === "edit-platform") {
-      const p = state.platforms.find(x => x.id === t.dataset.id);
-      if (p) openPlatformModal(p);
-      return;
+    if(a==="open-auth") return openAuth("login");
+    if(a==="open-auth-register") return openAuth("register");
+    if(a==="logout"){ if(auth) await signOut(auth); return; }
+    if(a==="new-platform") return openPlatformModal();
+    if(a==="edit-platform"){ const p=state.platforms.find(x=>x.id===t.dataset.id); if(p) openPlatformModal(p); return; }
+    if(a==="delete-platform"){ const p=state.platforms.find(x=>x.id===t.dataset.id); if(!p) return;
+      confirmDelete(`Delete platform "${p.name}"? এর সব version-ও থাকবে (history)` , async ()=>{
+        await deletePlatform(p.id); await logAction("PLATFORM_DELETED","platform",p.id,{name:p.name});
+        await reloadData(); render(); toast("🗑️ Deleted");
+      }); return;
     }
-    if (a === "delete-platform") {
-      const p = state.platforms.find(x => x.id === t.dataset.id);
-      if (!p) return;
-      confirmDelete(`Delete platform "${p.name}"? This cannot be undone.`, async () => {
-        await deletePlatform(p.id);
-        await reloadData();
-        render();
-        toast("🗑️ Platform deleted");
-      });
-      return;
+    if(a==="new-category") return openCategoryModal();
+    if(a==="edit-category"){ const c=state.categories.find(x=>x.id===t.dataset.id); if(c) openCategoryModal(c); return; }
+    if(a==="delete-category"){ const c=state.categories.find(x=>x.id===t.dataset.id); if(!c) return;
+      confirmDelete(`Delete category "${c.name}"?`, async ()=>{
+        await deleteCategory(c.id); await reloadData(); render(); toast("🗑️ Deleted");
+      }); return;
     }
-    if (a === "new-category") return openCategoryModal();
-    if (a === "edit-category") {
-      const c = state.categories.find(x => x.id === t.dataset.id);
-      if (c) openCategoryModal(c);
-      return;
+    if(a==="new-version") return openVersionModal();
+    if(a==="delete-version"){ const v=state.versions.find(x=>x.id===t.dataset.id); if(!v) return;
+      confirmDelete(`Delete version ${v.versionNumber}?`, async ()=>{
+        await deleteVersion(v.id); await reloadData(); render(); toast("🗑️ Deleted");
+      }); return;
     }
-    if (a === "delete-category") {
-      const c = state.categories.find(x => x.id === t.dataset.id);
-      if (!c) return;
-      confirmDelete(`Delete category "${c.name}"?`, async () => {
-        await deleteCategory(c.id);
-        await reloadData();
-        render();
-        toast("🗑️ Category deleted");
-      });
-      return;
-    }
+    if(a==="ver-test")     return versionAction(t.dataset.id, "TESTING", "VERSION_TESTING");
+    if(a==="ver-approve")  return versionAction(t.dataset.id, "APPROVED", "VERSION_APPROVED");
+    if(a==="ver-publish")  return versionAction(t.dataset.id, "LIVE", "VERSION_PUBLISHED");
+    if(a==="ver-rollback") return versionAction(t.dataset.id, "ROLLED_BACK", "VERSION_ROLLED_BACK");
   }
-
-  // Admin tabs
   const tab = e.target.closest(".admin-tab");
-  if (tab) {
-    document.querySelectorAll(".admin-tab").forEach(b => {
-      b.classList.remove("border-orange-500", "text-orange-600");
-      b.classList.add("border-transparent", "text-gray-500");
+  if (tab){
+    document.querySelectorAll(".admin-tab").forEach(b=>{
+      b.classList.remove("border-orange-500","text-orange-600");
+      b.classList.add("border-transparent","text-gray-500");
     });
-    tab.classList.remove("border-transparent", "text-gray-500");
-    tab.classList.add("border-orange-500", "text-orange-600");
-
-    const content = document.getElementById("adminTabContent");
-    if (!content) return;
-    if (tab.dataset.tab === "platforms") content.innerHTML = adminTabPlatforms();
-    if (tab.dataset.tab === "categories") content.innerHTML = adminTabCategories();
-    if (tab.dataset.tab === "audit") content.innerHTML = adminTabAudit();
+    tab.classList.remove("border-transparent","text-gray-500");
+    tab.classList.add("border-orange-500","text-orange-600");
+    const c = document.getElementById("adminTabContent");
+    if(!c) return;
+    if(tab.dataset.tab==="platforms")  c.innerHTML = adminTabPlatforms();
+    if(tab.dataset.tab==="categories") c.innerHTML = adminTabCategories();
+    if(tab.dataset.tab==="versions")   c.innerHTML = adminTabVersions();
+    if(tab.dataset.tab==="audit")      c.innerHTML = adminTabAudit();
   }
 });
 
-/* =======================  DATA LOADER  ======================= */
-async function reloadData() {
-  try {
-    const [cats, plats] = await Promise.all([fetchCategories(), fetchPlatforms()]);
-    state.categories = cats;
-    state.platforms = plats;
-  } catch (e) {
-    console.warn("Reload error:", e);
-  }
-  if (!state.categories.length && state.demoMode) state.categories = DEMO_CATEGORIES;
-  if (!state.platforms.length && state.demoMode)  state.platforms  = DEMO_PLATFORMS;
+/* ===== DATA LOADER ===== */
+async function reloadData(){
+  try{
+    const [c,p,v] = await Promise.all([fetchCategories(), fetchPlatforms(), fetchVersions()]);
+    state.categories = c; state.platforms = p; state.versions = v;
+  }catch(e){ console.warn(e); }
+  if(!state.categories.length && state.demoMode) state.categories = DEMO_CATEGORIES;
+  if(!state.platforms.length  && state.demoMode) state.platforms  = DEMO_PLATFORMS;
+  if(!state.versions.length   && state.demoMode) state.versions   = DEMO_VERSIONS;
   state.products = DEMO_PRODUCTS;
 }
 
-/* =======================  INIT  ======================= */
-async function init() {
-  if (!state.demoMode && auth) {
-    onAuthStateChanged(auth, async (u) => {
-  state.user = u;
-  if (u) {
-    try {
-      const userRef = doc(db, "users", u.uid);
-      const snap = await getDoc(userRef);
-      if (snap.exists()) {
-        state.profile = snap.data();
-      } else {
-        // চেক করুন এটা কি প্রথম ইউজার?
-        const allUsers = await getDocs(collection(db, "users"));
-        const isFirst = allUsers.size === 0;
-        const newProfile = {
-          email: u.email || "",
-          role: isFirst ? "SUPER_ADMIN" : "USER",
-          createdAt: serverTimestamp()
-        };
-        await setDoc(userRef, newProfile);
-        state.profile = newProfile;
-      }
-    } catch (e) { console.warn(e); }
-  } else state.profile = null;
-  render();
-});
+/* ===== INIT ===== */
+async function init(){
+  if(!state.demoMode && auth){
+    onAuthStateChanged(auth, async (u)=>{
+      state.user = u;
+      if(u){
+        try{
+          const ref = doc(db,"users",u.uid);
+          const snap = await getDoc(ref);
+          if(snap.exists()) state.profile = snap.data();
+          else{
+            const all = await getDocs(collection(db,"users"));
+            const isFirst = all.size === 0;
+            const prof = { email:u.email||"", role: isFirst?"SUPER_ADMIN":"USER", createdAt: serverTimestamp() };
+            await setDoc(ref, prof);
+            state.profile = prof;
+          }
+        }catch(e){ console.warn(e); }
+      } else state.profile = null;
+      render();
+    });
   }
-
   await reloadData();
-
-  window.addEventListener("hashchange", () => {
-    state.route = location.hash.replace("#", "") || "/";
+  window.addEventListener("hashchange", ()=>{
+    state.route = location.hash.replace("#","") || "/";
     render();
   });
-
   render();
 }
 init();
