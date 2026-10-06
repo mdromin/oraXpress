@@ -942,15 +942,29 @@ async function reloadData() {
 async function init() {
   if (!state.demoMode && auth) {
     onAuthStateChanged(auth, async (u) => {
-      state.user = u;
-      if (u) {
-        try {
-          const snap = await getDoc(doc(db, "users", u.uid));
-          state.profile = snap.exists() ? snap.data() : null;
-        } catch (e) { console.warn(e); }
-      } else state.profile = null;
-      render();
-    });
+  state.user = u;
+  if (u) {
+    try {
+      const userRef = doc(db, "users", u.uid);
+      const snap = await getDoc(userRef);
+      if (snap.exists()) {
+        state.profile = snap.data();
+      } else {
+        // চেক করুন এটা কি প্রথম ইউজার?
+        const allUsers = await getDocs(collection(db, "users"));
+        const isFirst = allUsers.size === 0;
+        const newProfile = {
+          email: u.email || "",
+          role: isFirst ? "SUPER_ADMIN" : "USER",
+          createdAt: serverTimestamp()
+        };
+        await setDoc(userRef, newProfile);
+        state.profile = newProfile;
+      }
+    } catch (e) { console.warn(e); }
+  } else state.profile = null;
+  render();
+});
   }
 
   await reloadData();
